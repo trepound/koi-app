@@ -1,0 +1,591 @@
+"use client";
+
+/**
+ * KOI Elite Dashboard — composition layer (Phase 2 refactor).
+ *
+ * Phase 3+ extension points: replace `loadTrades`/`saveTrades` with API + auth;
+ * add Opportunity Vault, Portfolio Manager, and AI coach data hooks alongside
+ * existing `evaluateKoiSetup` / trade helpers.
+ */
+
+import { useEffect, useMemo, useState } from "react";
+import { TradeCoachPanel } from "@/components/dashboard/TradeCoachPanel";
+import { TraderScorecard } from "@/components/dashboard/TraderScorecard";
+import { OpportunityDecisionEngine } from "@/components/ode/OpportunityDecisionEngine";
+import { SystemChecksPanel } from "@/components/ode/SystemChecksPanel";
+import { TradeLifecycleTable } from "@/components/trade/TradeLifecycleTable";
+import { TradeSetupPanel } from "@/components/trade/TradeSetupPanel";
+import { dashboardStyles } from "@/lib/koi/dashboard-styles";
+import { evaluateKoiSetup, getKoiTradeDecision } from "@/lib/koi/ode";
+import {
+  calculateAutoPositionSize,
+  calculateWeightedRewardRiskFromPrices,
+} from "@/lib/koi/risk";
+import {
+  applyMistakesById,
+  buildNewTrade,
+  finalizeExistingTrade,
+  updateTradeStatusById,
+} from "@/lib/koi/trade";
+import {
+  clearTradesStorage,
+  loadTrades,
+  saveTrades,
+} from "@/lib/koi/storage";
+import type {
+  Freshness,
+  HTFAlignment,
+  ImbalanceQuality,
+  KoiDisplayModel,
+  KoiHTFLocation,
+  KoiImbalance,
+  KoiPatternStage,
+  KoiTimeAtZone,
+  KoiTrend,
+  KoiZoneSide,
+  LocationQuality,
+  Mistake,
+  Trade,
+  TradeStatus,
+} from "@/lib/koi/types";
+
+const styles = dashboardStyles;
+
+export default function Home() {
+  const [symbol, setSymbol] = useState("");
+  const [entry, setEntry] = useState("");
+  const [stop, setStop] = useState("");
+  const [target, setTarget] = useState("");
+  const [target2, setTarget2] = useState("");
+  const [target1AllocPct, setTarget1AllocPct] = useState("0");
+  const [target2AllocPct, setTarget2AllocPct] = useState("100");
+  const [accountSize, setAccountSize] = useState("");
+  const [riskPercent, setRiskPercent] = useState("");
+  const [size, setSize] = useState("");
+  const [positionSizeManual, setPositionSizeManual] = useState(false);
+
+  const [imbalanceQuality, setImbalanceQuality] =
+    useState<ImbalanceQuality>("Strong");
+  const [freshness, setFreshness] = useState<"" | Freshness>("");
+  const [htfAlignment, setHTFAlignment] =
+    useState<HTFAlignment>("Fully Aligned");
+  const [locationQuality, setLocationQuality] =
+    useState<import("@/lib/koi/types").LocationQuality>("Excellent");
+
+  const [selectedMistakes, setSelectedMistakes] = useState<Mistake[]>([]);
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const [exitInputs, setExitInputs] = useState<Record<number, string>>({});
+
+  const [koiTrend, setKoiTrend] = useState<KoiTrend>("");
+  const [koiHTFLocation, setKoiHTFLocation] = useState<KoiHTFLocation>("");
+  const [koiZoneSide, setKoiZoneSide] = useState<KoiZoneSide>("");
+  const [koiPatternStage, setKoiPatternStage] = useState<KoiPatternStage>("");
+  const [koiImbalance, setKoiImbalance] = useState<KoiImbalance>("");
+  const [koiTimeAtZone, setKoiTimeAtZone] = useState<KoiTimeAtZone>("");
+  const [showSystemChecks, setShowSystemChecks] = useState(false);
+
+  useEffect(() => {
+    setTrades(loadTrades());
+  }, []);
+
+  useEffect(() => {
+    saveTrades(trades);
+  }, [trades]);
+
+  useEffect(() => {
+    if (positionSizeManual) return;
+    setSize(calculateAutoPositionSize(accountSize, riskPercent, entry, stop));
+  }, [entry, stop, accountSize, riskPercent, positionSizeManual]);
+
+  function handleMistakeToggle(mistake: Mistake) {
+    setSelectedMistakes((prev) =>
+      prev.includes(mistake)
+        ? prev.filter((m) => m !== mistake)
+        : [...prev, mistake]
+    );
+  }
+
+  function handleTarget1AllocChange(raw: string) {
+    setTarget1AllocPct(raw);
+    const t = raw.trim();
+    if (t === "") {
+      setTarget2AllocPct("100");
+      return;
+    }
+    const n = Number(t);
+    if (!Number.isFinite(n)) return;
+    const c = Math.max(0, Math.min(100, n));
+    setTarget1AllocPct(String(c));
+    setTarget2AllocPct(String(100 - c));
+  }
+
+  function handleTarget2AllocChange(raw: string) {
+    setTarget2AllocPct(raw);
+    const t = raw.trim();
+    if (t === "") {
+      setTarget1AllocPct("0");
+      return;
+    }
+    const n = Number(t);
+    if (!Number.isFinite(n)) return;
+    const c = Math.max(0, Math.min(100, n));
+    setTarget2AllocPct(String(c));
+    setTarget1AllocPct(String(100 - c));
+  }
+
+  const koiEval = useMemo(() => {
+    return evaluateKoiSetup({
+      trend: koiTrend,
+      htfLocation: koiHTFLocation,
+      zoneSide: koiZoneSide,
+      patternStage: koiPatternStage,
+      imbalance: koiImbalance,
+      timeAtZone: koiTimeAtZone,
+      entryPrice: entry,
+      stopPrice: stop,
+      target1Price: target,
+      target2Price: target2,
+    });
+  }, [
+    koiTrend,
+    koiHTFLocation,
+    koiZoneSide,
+    koiPatternStage,
+    koiImbalance,
+    koiTimeAtZone,
+    entry,
+    stop,
+    target,
+    target2,
+  ]);
+
+  const koiDisplay: KoiDisplayModel = useMemo(
+    () => ({
+      totalScore:
+        !koiEval.isComplete && koiEval.totalScore === 0
+          ? "—"
+          : (koiEval.totalScore ?? "—"),
+      grade: koiEval.grade ?? "—",
+      setupQuality: koiEval.setupQuality ?? "Waiting for input",
+      tradeDecision: getKoiTradeDecision({
+        isComplete: koiEval.isComplete,
+        tradeAllowed: koiEval.tradeAllowed,
+        zoneSide: koiZoneSide,
+        grade: koiEval.grade,
+      }),
+      scorePartialHint:
+        !koiEval.isComplete &&
+        typeof koiEval.totalScore === "number" &&
+        koiEval.totalScore > 0,
+    }),
+    [koiEval, koiZoneSide]
+  );
+
+  const engineTradeBias: "Long" | "Short" | null =
+    koiEval.tradeAllowed
+      ? koiZoneSide === "Demand"
+        ? "Long"
+        : koiZoneSide === "Supply"
+          ? "Short"
+          : null
+      : null;
+
+  const gradeVisual = useMemo(() => {
+    const g = koiDisplay.grade;
+    return g === "A+"
+      ? {
+          color: "#36d399",
+          fontWeight: 900,
+          opacity: 1,
+          boxShadow:
+            "0 0 0 1px rgba(54,211,153,.35), 0 0 20px rgba(54,211,153,.30)",
+          borderColor: "rgba(54,211,153,.45)",
+        }
+      : g === "A"
+        ? {
+            color: "#22c55e",
+            fontWeight: 850,
+            opacity: 1,
+            boxShadow: "none",
+            borderColor: "rgba(34,197,94,.35)",
+          }
+        : g === "B+"
+          ? {
+              color: "#2dd4bf",
+              fontWeight: 780,
+              opacity: 1,
+              boxShadow: "none",
+              borderColor: "rgba(45,212,191,.28)",
+            }
+          : g === "B"
+            ? {
+                color: "#e2e8f0",
+                fontWeight: 700,
+                opacity: 1,
+                boxShadow: "none",
+                borderColor: "rgba(226,232,240,.22)",
+              }
+            : g === "C"
+              ? {
+                  color: "#d8c27a",
+                  fontWeight: 650,
+                  opacity: 0.85,
+                  boxShadow: "none",
+                  borderColor: "rgba(216,194,122,.22)",
+                }
+              : g === "D/F"
+                ? {
+                    color: "#fb7185",
+                    fontWeight: 650,
+                    opacity: 0.72,
+                    boxShadow: "none",
+                    borderColor: "rgba(251,113,133,.32)",
+                  }
+                : {
+                    color: "#9bb0d1",
+                    fontWeight: 700,
+                    opacity: 0.8,
+                    boxShadow: "none",
+                    borderColor: "rgba(155,176,209,.20)",
+                  };
+  }, [koiDisplay.grade]);
+
+  function handleCreateSetup() {
+    const entryNum = Number(entry);
+    const stopNum = Number(stop);
+    const targetNum = Number(target);
+    const target2Num = Number(target2);
+    const sizeNum = Number(size);
+    const pct1 = Number(target1AllocPct);
+    const pct2 = Number(target2AllocPct);
+    const setupSide =
+      koiEval.tradeAllowed
+        ? koiZoneSide === "Demand"
+          ? "Long"
+          : koiZoneSide === "Supply"
+            ? "Short"
+            : null
+        : null;
+
+    if (!symbol || !entryNum || !stopNum || !targetNum || !target2Num || !sizeNum) {
+      alert("Please fill in all setup fields.");
+      return;
+    }
+    if (!sizeNum || sizeNum <= 0) {
+      alert("Position size must be greater than zero.");
+      return;
+    }
+    if (
+      !Number.isFinite(pct1) ||
+      !Number.isFinite(pct2) ||
+      Math.abs(pct1 + pct2 - 100) >= 0.0001
+    ) {
+      alert("Target 1 and Target 2 allocation % must total exactly 100%.");
+      return;
+    }
+    const riskDollars = Math.abs(entryNum - stopNum);
+    if (!riskDollars) {
+      alert("Entry and stop must differ (risk cannot be zero).");
+      return;
+    }
+    if (!freshness) {
+      alert("Select Fresh in the Opportunity Decision Engine.");
+      return;
+    }
+    if (!setupSide) {
+      alert(
+        "Complete Opportunity Decision Engine (valid opportunity required for Trade Bias)."
+      );
+      return;
+    }
+
+    const newTrade = buildNewTrade({
+      symbol,
+      entry: entryNum,
+      stop: stopNum,
+      target: targetNum,
+      target2: target2Num,
+      pct1,
+      pct2,
+      size: sizeNum,
+      side: setupSide,
+      imbalanceQuality,
+      freshness,
+      htfAlignment,
+      locationQuality,
+    });
+
+    setTrades((prev) => [newTrade, ...prev]);
+
+    setSymbol("");
+    setEntry("");
+    setStop("");
+    setTarget("");
+    setTarget2("");
+    setTarget1AllocPct("0");
+    setTarget2AllocPct("100");
+    setAccountSize("");
+    setRiskPercent("");
+    setSize("");
+    setPositionSizeManual(false);
+    setImbalanceQuality("Strong");
+    setFreshness("");
+    setHTFAlignment("Fully Aligned");
+    setLocationQuality("Excellent");
+    setSelectedMistakes([]);
+  }
+
+  function updateTradeStatus(id: number, status: TradeStatus) {
+    setTrades((prev) => updateTradeStatusById(prev, id, status));
+  }
+
+  function finalizeTrade(id: number) {
+    const exitValue = Number(exitInputs[id]);
+
+    if (!exitValue) {
+      alert("Please enter an exit price.");
+      return;
+    }
+
+    setTrades((prev) =>
+      prev.map((trade) => {
+        if (trade.id !== id) return trade;
+        return finalizeExistingTrade(trade, exitValue);
+      })
+    );
+  }
+
+  function applyMistakesToTrade(id: number) {
+    setTrades((prev) => applyMistakesById(prev, id, selectedMistakes));
+  }
+
+  function handleClearTrades() {
+    const confirmed = window.confirm("Clear all saved trades?");
+    if (!confirmed) return;
+    setTrades([]);
+    clearTradesStorage();
+    setExitInputs({});
+  }
+
+  const closedTrades = trades.filter((t) => t.status === "CLOSED");
+  const activeTrades = trades.filter((t) => t.status === "ACTIVE");
+  const pendingTrades = trades.filter((t) => t.status === "PENDING");
+  const plannedTrades = trades.filter((t) => t.status === "PLANNED");
+  const missedTrades = trades.filter((t) => t.status === "MISSED");
+
+  const tradeSetupAllocationValid = useMemo(() => {
+    const a = Number(target1AllocPct);
+    const b = Number(target2AllocPct);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+    return Math.abs(a + b - 100) < 0.0001;
+  }, [target1AllocPct, target2AllocPct]);
+
+  const tradeSetupDerived = useMemo(() => {
+    const entryNum = Number(entry.trim());
+    const stopNum = Number(stop.trim());
+    const t1 = Number(target.trim());
+    const t2 = Number(target2.trim());
+    const pct1 = Number(target1AllocPct.trim());
+    const pct2 = Number(target2AllocPct.trim());
+    const acc = Number(accountSize.trim());
+    const rp = Number(riskPercent.trim());
+
+    const riskDist =
+      Number.isFinite(entryNum) &&
+      Number.isFinite(stopNum) &&
+      Math.abs(entryNum - stopNum) > 0
+        ? Math.abs(entryNum - stopNum)
+        : null;
+
+    let weightedRR: number | null = null;
+    if (
+      riskDist &&
+      Number.isFinite(t1) &&
+      Number.isFinite(t2) &&
+      Number.isFinite(pct1) &&
+      Number.isFinite(pct2) &&
+      Math.abs(pct1 + pct2 - 100) < 0.0001
+    ) {
+      weightedRR = calculateWeightedRewardRiskFromPrices(
+        entryNum,
+        stopNum,
+        t1,
+        t2,
+        pct1,
+        pct2
+      );
+    }
+
+    let riskAmount: number | null = null;
+    if (Number.isFinite(acc) && acc > 0 && Number.isFinite(rp) && rp >= 0) {
+      riskAmount = acc * (rp / 100);
+    }
+
+    return { weightedRR, riskAmount, riskDist };
+  }, [
+    entry,
+    stop,
+    target,
+    target2,
+    target1AllocPct,
+    target2AllocPct,
+    accountSize,
+    riskPercent,
+  ]);
+
+  const avgR = useMemo(() => {
+    if (!closedTrades.length) return 0;
+    const total = closedTrades.reduce(
+      (sum, trade) => sum + (trade.rMultiple ?? 0),
+      0
+    );
+    return total / closedTrades.length;
+  }, [closedTrades]);
+
+  const avgRewardRisk = useMemo(() => {
+    if (!trades.length) return 0;
+    const total = trades.reduce((sum, trade) => sum + trade.rewardRisk, 0);
+    return total / trades.length;
+  }, [trades]);
+
+  const avgSetupScore = useMemo(() => {
+    if (!trades.length) return 0;
+    const total = trades.reduce((sum, trade) => sum + trade.setupScore, 0);
+    return total / trades.length;
+  }, [trades]);
+
+  const avgExecutionScore = useMemo(() => {
+    if (!closedTrades.length) return 0;
+    const total = closedTrades.reduce(
+      (sum, trade) => sum + (trade.executionScore ?? 0),
+      0
+    );
+    return total / closedTrades.length;
+  }, [closedTrades]);
+
+  const avgTotalScore = useMemo(() => {
+    if (!closedTrades.length) return 0;
+    const total = closedTrades.reduce(
+      (sum, trade) => sum + (trade.totalScore ?? 0),
+      0
+    );
+    return total / closedTrades.length;
+  }, [closedTrades]);
+
+  const disciplineScore = useMemo(() => {
+    if (!closedTrades.length) return 100;
+    const cleanTrades = closedTrades.filter(
+      (trade) => trade.mistakes.length === 0
+    ).length;
+    return (cleanTrades / closedTrades.length) * 100;
+  }, [closedTrades]);
+
+  return (
+    <main style={styles.page}>
+      <div style={styles.header}>
+        <h1 style={styles.headerTitle}>KOI Elite Dashboard</h1>
+        <p style={styles.headerText}>
+          Trading performance, scoring, and lifecycle control.
+        </p>
+      </div>
+
+      <div style={styles.wrap}>
+        <TraderScorecard
+          avgR={avgR}
+          avgRewardRisk={avgRewardRisk}
+          avgSetupScore={avgSetupScore}
+          avgExecutionScore={avgExecutionScore}
+          avgTotalScore={avgTotalScore}
+          disciplineScore={disciplineScore}
+          plannedCount={plannedTrades.length}
+          pendingCount={pendingTrades.length}
+          activeCount={activeTrades.length}
+          closedCount={closedTrades.length}
+          missedCount={missedTrades.length}
+        />
+
+        <TradeCoachPanel />
+
+        <OpportunityDecisionEngine
+          koiEval={koiEval}
+          koiDisplay={koiDisplay}
+          gradeVisual={gradeVisual}
+          koiTrend={koiTrend}
+          setKoiTrend={setKoiTrend}
+          koiHTFLocation={koiHTFLocation}
+          setKoiHTFLocation={setKoiHTFLocation}
+          koiZoneSide={koiZoneSide}
+          setKoiZoneSide={setKoiZoneSide}
+          koiPatternStage={koiPatternStage}
+          setKoiPatternStage={setKoiPatternStage}
+          koiImbalance={koiImbalance}
+          setKoiImbalance={setKoiImbalance}
+          setImbalanceQuality={setImbalanceQuality}
+          freshness={freshness}
+          setFreshness={setFreshness}
+          koiTimeAtZone={koiTimeAtZone}
+          setKoiTimeAtZone={setKoiTimeAtZone}
+          entry={entry}
+          setEntry={setEntry}
+          stop={stop}
+          setStop={setStop}
+          target={target}
+          setTarget={setTarget}
+          target2={target2}
+          setTarget2={setTarget2}
+        />
+
+        <SystemChecksPanel
+          showSystemChecks={showSystemChecks}
+          setShowSystemChecks={setShowSystemChecks}
+          koiEval={koiEval}
+          koiZoneSide={koiZoneSide}
+        />
+
+        <TradeSetupPanel
+          engineTradeBias={engineTradeBias}
+          symbol={symbol}
+          setSymbol={setSymbol}
+          entry={entry}
+          setEntry={setEntry}
+          stop={stop}
+          setStop={setStop}
+          target={target}
+          setTarget={setTarget}
+          target2={target2}
+          setTarget2={setTarget2}
+          target1AllocPct={target1AllocPct}
+          target2AllocPct={target2AllocPct}
+          onTarget1AllocChange={handleTarget1AllocChange}
+          onTarget2AllocChange={handleTarget2AllocChange}
+          tradeSetupAllocationValid={tradeSetupAllocationValid}
+          accountSize={accountSize}
+          setAccountSize={setAccountSize}
+          riskPercent={riskPercent}
+          setRiskPercent={setRiskPercent}
+          size={size}
+          setSize={setSize}
+          setPositionSizeManual={setPositionSizeManual}
+          positionSizeManual={positionSizeManual}
+          tradeSetupDerived={tradeSetupDerived}
+          onCreateSetup={handleCreateSetup}
+          onClearTrades={handleClearTrades}
+          selectedMistakes={selectedMistakes}
+          onToggleMistake={handleMistakeToggle}
+        />
+
+        <div style={styles.card}>
+          <h2 style={styles.sectionTitle}>Trade Lifecycle</h2>
+          <TradeLifecycleTable
+            trades={trades}
+            exitInputs={exitInputs}
+            setExitInputs={setExitInputs}
+            updateTradeStatus={updateTradeStatus}
+            finalizeTrade={finalizeTrade}
+            applyMistakesToTrade={applyMistakesToTrade}
+          />
+        </div>
+      </div>
+    </main>
+  );
+}
