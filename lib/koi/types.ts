@@ -27,6 +27,55 @@ export type KoiGrade = "A+" | "A" | "B+" | "B" | "C" | "D/F";
 
 export type KoiTrendRelation = "With Trend" | "Sideways" | "Against Trend";
 
+/** Stored on `profiles.role` — extend for coach/admin dashboards in a later phase. */
+export type UserRole = "student" | "coach" | "admin";
+
+/** Row shape from `public.profiles` (snake_case). */
+export type DatabaseProfileRow = {
+  id: string;
+  email: string | null;
+  role: string;
+  created_at: string;
+};
+
+/** Row shape from `public.trades` (snake_case). */
+export type DatabaseTradeRow = {
+  id: number | string;
+  user_id: string;
+  symbol: string;
+  entry: number | string;
+  stop: number | string;
+  target: number | string;
+  target2: number | string | null;
+  target1_allocation_pct: number | string | null;
+  target2_allocation_pct: number | string | null;
+  size: number | string;
+  side: string;
+  status: string;
+  imbalance_quality: string;
+  freshness: string;
+  htf_alignment: string;
+  location_quality: string;
+  setup_score: number | string;
+  setup_grade: string;
+  reward_risk: number | string;
+  r_multiple: number | string | null;
+  execution_score: number | string | null;
+  total_score: number | string | null;
+  final_grade: string | null;
+  exit_price: number | string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Row shape from `public.trade_mistakes` (snake_case). */
+export type DatabaseTradeMistakeRow = {
+  id: number | string;
+  trade_id: number | string;
+  mistake: string;
+  created_at: string;
+};
+
 export type Trade = {
   id: number;
   symbol: string;

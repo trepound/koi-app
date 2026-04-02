@@ -1,6 +1,10 @@
 import { STORAGE_KEY } from "./constants";
 import type { Trade } from "./types";
 
+/**
+ * Legacy browser persistence (pre–Phase 3). Kept for emergency fallback and a
+ * future one-time cloud import when the user is signed in but Supabase has no trades.
+ */
 export function loadTrades(): Trade[] {
   if (typeof window === "undefined") return [];
   try {
