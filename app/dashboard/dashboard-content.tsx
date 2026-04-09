@@ -23,7 +23,6 @@ import { TradeSetupPanel } from "@/components/trade/TradeSetupPanel";
 import { dashboardStyles } from "@/lib/koi/dashboard-styles";
 import { evaluateKoiSetup, getKoiTradeDecision } from "@/lib/koi/ode";
 import {
-  calculateAutoPositionSize,
   calculateWeightedRewardRiskFromPrices,
 } from "@/lib/koi/risk";
 import { clearTradesStorage } from "@/lib/koi/storage";
@@ -76,12 +75,13 @@ export function DashboardContent() {
   const [stop, setStop] = useState("");
   const [target, setTarget] = useState("");
   const [target2, setTarget2] = useState("");
-  const [target1AllocPct, setTarget1AllocPct] = useState("0");
-  const [target2AllocPct, setTarget2AllocPct] = useState("100");
+  const [hasSecondTarget, setHasSecondTarget] = useState(false);
+  const [target1Allocation, setTarget1Allocation] = useState(100);
+  const [target2Allocation, setTarget2Allocation] = useState(0);
   const [accountSize, setAccountSize] = useState("");
   const [riskPercent, setRiskPercent] = useState("");
   const [size, setSize] = useState("");
-  const [positionSizeManual, setPositionSizeManual] = useState(false);
+  const [tradeSetupFormKey, setTradeSetupFormKey] = useState(0);
 
   const [imbalanceQuality, setImbalanceQuality] =
     useState<ImbalanceQuality>("Strong");
@@ -180,11 +180,6 @@ export function DashboardContent() {
     };
   }, [user.id]);
 
-  useEffect(() => {
-    if (positionSizeManual) return;
-    setSize(calculateAutoPositionSize(accountSize, riskPercent, entry, stop));
-  }, [entry, stop, accountSize, riskPercent, positionSizeManual]);
-
   function handleSetupMistakeToggle(mistake: Mistake) {
     setSelectedSetupMistakes((prev) =>
       prev.includes(mistake)
@@ -199,34 +194,6 @@ export function DashboardContent() {
         ? prev.filter((m) => m !== mistake)
         : [...prev, mistake]
     );
-  }
-
-  function handleTarget1AllocChange(raw: string) {
-    setTarget1AllocPct(raw);
-    const t = raw.trim();
-    if (t === "") {
-      setTarget2AllocPct("100");
-      return;
-    }
-    const n = Number(t);
-    if (!Number.isFinite(n)) return;
-    const c = Math.max(0, Math.min(100, n));
-    setTarget1AllocPct(String(c));
-    setTarget2AllocPct(String(100 - c));
-  }
-
-  function handleTarget2AllocChange(raw: string) {
-    setTarget2AllocPct(raw);
-    const t = raw.trim();
-    if (t === "") {
-      setTarget1AllocPct("0");
-      return;
-    }
-    const n = Number(t);
-    if (!Number.isFinite(n)) return;
-    const c = Math.max(0, Math.min(100, n));
-    setTarget2AllocPct(String(c));
-    setTarget1AllocPct(String(100 - c));
   }
 
   const koiEval = useMemo(() => {
@@ -352,10 +319,10 @@ export function DashboardContent() {
     const entryNum = Number(entry);
     const stopNum = Number(stop);
     const targetNum = Number(target);
-    const target2Num = Number(target2);
+    const target2NumRaw = Number(target2.trim());
     const sizeNum = Number(size);
-    const pct1 = Number(target1AllocPct);
-    const pct2 = Number(target2AllocPct);
+    const pct1 = hasSecondTarget ? target1Allocation : 100;
+    const pct2 = hasSecondTarget ? target2Allocation : 0;
     const setupSide =
       koiEval.tradeAllowed
         ? koiZoneSide === "Demand"
@@ -365,7 +332,7 @@ export function DashboardContent() {
             : null
         : null;
 
-    if (!symbol || !entryNum || !stopNum || !targetNum || !target2Num || !sizeNum) {
+    if (!symbol || !entryNum || !stopNum || !targetNum || !sizeNum) {
       alert("Please fill in all setup fields.");
       return;
     }
@@ -373,13 +340,23 @@ export function DashboardContent() {
       alert("Position size must be greater than zero.");
       return;
     }
-    if (
-      !Number.isFinite(pct1) ||
-      !Number.isFinite(pct2) ||
-      Math.abs(pct1 + pct2 - 100) >= 0.0001
-    ) {
-      alert("Target 1 and Target 2 allocation % must total exactly 100%.");
-      return;
+    if (hasSecondTarget) {
+      if (
+        !target2.trim() ||
+        !Number.isFinite(target2NumRaw) ||
+        target2NumRaw <= 0
+      ) {
+        alert("Enter a valid Target 2 price or remove Target 2.");
+        return;
+      }
+      if (
+        !Number.isFinite(pct1) ||
+        !Number.isFinite(pct2) ||
+        Math.abs(pct1 + pct2 - 100) >= 0.0001
+      ) {
+        alert("Target 1 and Target 2 allocation % must total exactly 100%.");
+        return;
+      }
     }
     const riskDollars = Math.abs(entryNum - stopNum);
     if (!riskDollars) {
@@ -402,7 +379,7 @@ export function DashboardContent() {
       entry: entryNum,
       stop: stopNum,
       target: targetNum,
-      target2: target2Num,
+      target2: hasSecondTarget ? target2NumRaw : targetNum,
       pct1,
       pct2,
       size: sizeNum,
@@ -429,12 +406,13 @@ export function DashboardContent() {
     setStop("");
     setTarget("");
     setTarget2("");
-    setTarget1AllocPct("0");
-    setTarget2AllocPct("100");
+    setHasSecondTarget(false);
+    setTarget1Allocation(100);
+    setTarget2Allocation(0);
     setAccountSize("");
     setRiskPercent("");
     setSize("");
-    setPositionSizeManual(false);
+    setTradeSetupFormKey((k) => k + 1);
     setImbalanceQuality("Strong");
     setFreshness("");
     setHTFAlignment("Fully Aligned");
@@ -554,19 +532,19 @@ export function DashboardContent() {
   const missedTrades = trades.filter((t) => t.status === "MISSED");
 
   const tradeSetupAllocationValid = useMemo(() => {
-    const a = Number(target1AllocPct);
-    const b = Number(target2AllocPct);
-    if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
-    return Math.abs(a + b - 100) < 0.0001;
-  }, [target1AllocPct, target2AllocPct]);
+    if (!hasSecondTarget) return true;
+    if (!Number.isFinite(target1Allocation) || !Number.isFinite(target2Allocation))
+      return false;
+    return Math.abs(target1Allocation + target2Allocation - 100) < 0.0001;
+  }, [hasSecondTarget, target1Allocation, target2Allocation]);
 
   const tradeSetupDerived = useMemo(() => {
     const entryNum = Number(entry.trim());
     const stopNum = Number(stop.trim());
     const t1 = Number(target.trim());
     const t2 = Number(target2.trim());
-    const pct1 = Number(target1AllocPct.trim());
-    const pct2 = Number(target2AllocPct.trim());
+    const pct1 = hasSecondTarget ? target1Allocation : 100;
+    const pct2 = hasSecondTarget ? target2Allocation : 0;
     const acc = Number(accountSize.trim());
     const rp = Number(riskPercent.trim());
 
@@ -578,22 +556,23 @@ export function DashboardContent() {
         : null;
 
     let weightedRR: number | null = null;
-    if (
-      riskDist &&
-      Number.isFinite(t1) &&
-      Number.isFinite(t2) &&
-      Number.isFinite(pct1) &&
-      Number.isFinite(pct2) &&
-      Math.abs(pct1 + pct2 - 100) < 0.0001
-    ) {
-      weightedRR = calculateWeightedRewardRiskFromPrices(
-        entryNum,
-        stopNum,
-        t1,
-        t2,
-        pct1,
-        pct2
-      );
+    if (riskDist && Number.isFinite(t1) && Number.isFinite(entryNum)) {
+      if (!hasSecondTarget) {
+        weightedRR = Math.abs(t1 - entryNum) / riskDist;
+      } else if (
+        Number.isFinite(t2) &&
+        t2 > 0 &&
+        Math.abs(pct1 + pct2 - 100) < 0.0001
+      ) {
+        weightedRR = calculateWeightedRewardRiskFromPrices(
+          entryNum,
+          stopNum,
+          t1,
+          t2,
+          pct1,
+          pct2
+        );
+      }
     }
 
     let riskAmount: number | null = null;
@@ -607,8 +586,9 @@ export function DashboardContent() {
     stop,
     target,
     target2,
-    target1AllocPct,
-    target2AllocPct,
+    hasSecondTarget,
+    target1Allocation,
+    target2Allocation,
     accountSize,
     riskPercent,
   ]);
@@ -760,30 +740,27 @@ export function DashboardContent() {
           />
 
           <TradeSetupPanel
+            key={tradeSetupFormKey}
             engineTradeBias={engineTradeBias}
             symbol={symbol}
             setSymbol={setSymbol}
             entry={entry}
-            setEntry={setEntry}
             stop={stop}
-            setStop={setStop}
             target={target}
-            setTarget={setTarget}
             target2={target2}
             setTarget2={setTarget2}
-            target1AllocPct={target1AllocPct}
-            target2AllocPct={target2AllocPct}
-            onTarget1AllocChange={handleTarget1AllocChange}
-            onTarget2AllocChange={handleTarget2AllocChange}
+            hasSecondTarget={hasSecondTarget}
+            setHasSecondTarget={setHasSecondTarget}
+            target1Allocation={target1Allocation}
+            setTarget1Allocation={setTarget1Allocation}
+            target2Allocation={target2Allocation}
+            setTarget2Allocation={setTarget2Allocation}
             tradeSetupAllocationValid={tradeSetupAllocationValid}
             accountSize={accountSize}
             setAccountSize={setAccountSize}
             riskPercent={riskPercent}
             setRiskPercent={setRiskPercent}
-            size={size}
             setSize={setSize}
-            setPositionSizeManual={setPositionSizeManual}
-            positionSizeManual={positionSizeManual}
             tradeSetupDerived={tradeSetupDerived}
             onCreateSetup={handleCreateSetup}
             onClearTrades={handleClearTrades}
