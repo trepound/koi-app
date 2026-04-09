@@ -1,6 +1,6 @@
 "use client";
 
-import { ALL_MISTAKES } from "@/lib/koi/constants";
+import { ALL_MISTAKES, MISTAKE_DEFINITIONS } from "@/lib/koi/constants";
 import type { Mistake } from "@/lib/koi/types";
 import { dashboardStyles as styles } from "@/lib/koi/dashboard-styles";
 
@@ -16,7 +16,11 @@ export function MistakesSelector({
   return (
     <div style={styles.mistakesBox}>
       {mistakeOptions.map((mistake) => (
-        <label key={mistake} style={styles.mistakeItem}>
+        <label
+          key={mistake}
+          style={styles.mistakeItem}
+          title={MISTAKE_DEFINITIONS[mistake]}
+        >
           <input
             type="checkbox"
             checked={selectedMistakes.includes(mistake)}

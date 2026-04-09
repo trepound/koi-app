@@ -1,9 +1,6 @@
 "use client";
 
 import { dashboardStyles as styles } from "@/lib/koi/dashboard-styles";
-import { SETUP_STAGE_MISTAKES } from "@/lib/koi/stage-mistakes";
-import type { Mistake } from "@/lib/koi/types";
-import { MistakesSelector } from "./MistakesSelector";
 import { TradeBiasDisplay } from "./TradeBiasDisplay";
 
 export type TradeSetupPanelProps = {
@@ -38,10 +35,6 @@ export type TradeSetupPanelProps = {
   };
   onCreateSetup: () => void;
   onClearTrades: () => void;
-  selectedMistakes: Mistake[];
-  onToggleMistake: (m: Mistake) => void;
-  /** Defaults to setup-stage mistakes only. */
-  mistakeOptions?: Mistake[];
 };
 
 export function TradeSetupPanel({
@@ -72,26 +65,7 @@ export function TradeSetupPanel({
   tradeSetupDerived,
   onCreateSetup,
   onClearTrades,
-  selectedMistakes,
-  onToggleMistake,
-  mistakeOptions = [...SETUP_STAGE_MISTAKES] as Mistake[],
 }: TradeSetupPanelProps) {
-  const formatCurrencyDisplay = (value: string) => {
-    const trimmed = value.trim();
-    if (trimmed === "") return "—";
-    const num = Number(trimmed);
-    if (!Number.isFinite(num) || num < 0) return "—";
-    return `$${num.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-  };
-
-  const formatPercentDisplay = (value: string) => {
-    const trimmed = value.trim();
-    if (trimmed === "") return "—";
-    const num = Number(trimmed);
-    if (!Number.isFinite(num) || num < 0) return "—";
-    return `${num.toFixed(1)}%`;
-  };
-
   const capitalRequired = (() => {
     const entryNum = Number(entry.trim());
     const sizeNum = Number(size.trim());
@@ -238,9 +212,6 @@ export function TradeSetupPanel({
           <div style={styles.tradeSetupCompactRow}>
             <div style={styles.tradeSetupCompactItem}>
               <div style={styles.tradeSetupCompactItemLabel}>Account Size</div>
-              <div style={styles.tradeSetupCompactItemValue}>
-                {formatCurrencyDisplay(accountSize)}
-              </div>
               <input
                 style={{ ...styles.input, padding: "6px 8px", marginTop: "3px" }}
                 placeholder="Account Size"
@@ -249,22 +220,6 @@ export function TradeSetupPanel({
                 onChange={(e) => {
                   setPositionSizeManual(false);
                   setAccountSize(e.target.value);
-                }}
-              />
-            </div>
-            <div style={styles.tradeSetupCompactItem}>
-              <div style={styles.tradeSetupCompactItemLabel}>Risk %</div>
-              <div style={styles.tradeSetupCompactItemValue}>
-                {formatPercentDisplay(riskPercent)}
-              </div>
-              <input
-                style={{ ...styles.input, padding: "6px 8px", marginTop: "3px" }}
-                placeholder="Risk %"
-                inputMode="decimal"
-                value={riskPercent}
-                onChange={(e) => {
-                  setPositionSizeManual(false);
-                  setRiskPercent(e.target.value);
                 }}
               />
             </div>
@@ -289,34 +244,174 @@ export function TradeSetupPanel({
               </div>
             </div>
           </div>
-          <div style={{ ...styles.tradeSetupCompactRow, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
-            <div style={styles.tradeSetupCompactItem}>
-              <div style={styles.tradeSetupCompactItemLabel}>Position Size</div>
-              <div style={styles.tradeSetupCompactItemValue}>
-                {size.trim() !== "" ? size : "—"}
+          <div
+            style={{
+              width: "100%",
+              minWidth: 0,
+              alignSelf: "stretch",
+              marginTop: "8px",
+              padding: "12px",
+              border: "1px solid #e8eef6",
+              borderRadius: "12px",
+              background: "#fff",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "14px",
+                width: "100%",
+                minWidth: 0,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  width: "100%",
+                  minWidth: 0,
+                }}
+              >
+                <label
+                  style={{
+                    display: "block",
+                    fontWeight: 600,
+                    marginBottom: "4px",
+                    lineHeight: 1.2,
+                  }}
+                >
+                  Risk %
+                </label>
+                <input
+                  style={{
+                    ...styles.input,
+                    padding: "6px 8px",
+                    width: "100%",
+                    boxSizing: "border-box",
+                  }}
+                  placeholder="Risk %"
+                  inputMode="decimal"
+                  value={riskPercent}
+                  onChange={(e) => {
+                    setPositionSizeManual(false);
+                    setRiskPercent(e.target.value);
+                  }}
+                />
+                <div
+                  style={{
+                    marginTop: "4px",
+                    fontSize: "12px",
+                    lineHeight: 1.35,
+                    opacity: 0.72,
+                  }}
+                >
+                  Set the percent of account risk for this trade.
+                </div>
               </div>
-            </div>
-            <div style={styles.tradeSetupCompactItem}>
-              <div style={styles.tradeSetupCompactItemLabel}>Capital Required</div>
-              <div style={styles.tradeSetupCompactItemValue}>
-                {capitalRequired !== null
-                  ? `$${capitalRequired.toLocaleString(undefined, {
-                      maximumFractionDigits: 0,
-                    })}`
-                  : "—"}
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+                  gap: "14px",
+                  width: "100%",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    width: "100%",
+                    minWidth: 0,
+                  }}
+                >
+                  <label
+                    style={{
+                      display: "block",
+                      fontWeight: 600,
+                      marginBottom: "4px",
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    Shares / Contracts
+                  </label>
+                  <input
+                    style={{
+                      ...styles.input,
+                      padding: "6px 8px",
+                      width: "100%",
+                      boxSizing: "border-box",
+                    }}
+                    placeholder="Shares / Contracts (auto or manual)"
+                    inputMode="decimal"
+                    value={size}
+                    onChange={(e) => {
+                      setPositionSizeManual(true);
+                      setSize(e.target.value);
+                    }}
+                  />
+                  <div
+                    style={{
+                      marginTop: "4px",
+                      fontSize: "12px",
+                      lineHeight: 1.35,
+                      opacity: 0.72,
+                    }}
+                  >
+                    Position size based on your risk plan.
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    width: "100%",
+                    minWidth: 0,
+                  }}
+                >
+                  <label
+                    style={{
+                      display: "block",
+                      fontWeight: 600,
+                      marginBottom: "4px",
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    Capital Required
+                  </label>
+                  <input
+                    style={{
+                      ...styles.input,
+                      padding: "6px 8px",
+                      width: "100%",
+                      boxSizing: "border-box",
+                    }}
+                    value={
+                      capitalRequired !== null
+                        ? `$${capitalRequired.toLocaleString(undefined, {
+                            maximumFractionDigits: 0,
+                          })}`
+                        : ""
+                    }
+                    placeholder="—"
+                    readOnly
+                  />
+                  <div
+                    style={{
+                      marginTop: "4px",
+                      fontSize: "12px",
+                      lineHeight: 1.35,
+                      opacity: 0.72,
+                    }}
+                  >
+                    Auto-calculated from entry x size.
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-          <input
-            style={{ ...styles.tradeSetupPositionInput, marginTop: "2px" }}
-            placeholder="Position size (auto or manual)"
-            inputMode="decimal"
-            value={size}
-            onChange={(e) => {
-              setPositionSizeManual(true);
-              setSize(e.target.value);
-            }}
-          />
         </div>
         {positionSizeManual && (
           <p
@@ -333,13 +428,6 @@ export function TradeSetupPanel({
           </p>
         )}
       </div>
-
-      <div style={styles.tradeSetupSubheading}>Setup Discipline</div>
-      <MistakesSelector
-        mistakes={mistakeOptions}
-        selectedMistakes={selectedMistakes}
-        onToggleMistake={onToggleMistake}
-      />
 
       <div style={styles.tradeSetupActions}>
         <button style={styles.buttonPrimary} onClick={onCreateSetup}>

@@ -9,7 +9,7 @@ import type {
   KoiImbalance,
   KoiPatternStage,
   KoiTimeAtZone,
-  KoiTrendRelation,
+  KoiTrend,
   LocationQuality,
 } from "./types";
 
@@ -38,10 +38,18 @@ export function getLocationPoints(value: LocationQuality) {
   return 0;
 }
 
-export function getKoiTrendPoints(relation: KoiTrendRelation) {
-  if (relation === "With Trend") return 20;
-  if (relation === "Sideways") return 10;
-  return 0;
+export function getKoiTrendPoints(trend: KoiTrend | string) {
+  const normalized = trend.toLowerCase();
+  switch (normalized) {
+    case "uptrend":
+      return 20;
+    case "sideways":
+      return 10;
+    case "downtrend":
+      return 0;
+    default:
+      return 10;
+  }
 }
 
 export function getKoiPatternPoints(value: KoiPatternStage) {

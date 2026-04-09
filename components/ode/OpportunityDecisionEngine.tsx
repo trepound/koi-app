@@ -20,6 +20,7 @@ import type {
   KoiTimeAtZone,
   KoiTrend,
   KoiZoneSide,
+  Mistake,
 } from "@/lib/koi/types";
 import { KoiInputHelp } from "./KoiInputHelp";
 
@@ -50,6 +51,8 @@ export type OpportunityDecisionEngineProps = {
   setTarget: (v: string) => void;
   target2: string;
   setTarget2: (v: string) => void;
+  setupMistakes: Mistake[];
+  managementMistakes: Mistake[];
 };
 
 const badgeStyle = dashboardStyles.badge as CSSProperties;
@@ -86,21 +89,50 @@ function normalizedTotalScore(value: number, isComplete: boolean): number | null
   return value;
 }
 
-function getCoachGuidance(totalScore: number | null): string {
+function getMistakeSeverity(
+  setupMistakes: Mistake[],
+  managementMistakes: Mistake[],
+): "none" | "warning" | "high" {
+  const hasSetup = setupMistakes.length > 0;
+  const hasManagement = managementMistakes.length > 0;
+  if (hasSetup && hasManagement) return "high";
+  if (hasSetup || hasManagement) return "warning";
+  return "none";
+}
+
+function getCoachGuidance(
+  totalScore: number | null,
+  severity: "none" | "warning" | "high",
+): string {
   if (!isFiniteScore(totalScore)) return "Complete inputs to get coaching guidance.";
-  if (totalScore >= 90) {
-    return "High-quality opportunity. Structure and context aligned.";
+
+  const strongScore = totalScore >= 80;
+  const weakScore = totalScore < 60;
+
+  if (severity === "none") {
+    if (strongScore) {
+      return "Strong score and clean execution behavior. High-quality opportunity with aligned structure and context.";
+    }
+    return "Clean behavior across setup and management. Keep following the plan and improve score quality step by step.";
   }
-  if (totalScore >= 80) {
-    return "Strong setup. Acceptable conditions.";
+
+  if (severity === "warning") {
+    if (strongScore) {
+      return "Strong score, but one mistake area is present. Treat this as caution and tighten execution discipline.";
+    }
+    if (weakScore) {
+      return "Weak score with one mistake area flagged. Review this trade before taking additional risk.";
+    }
+    return "One mistake area is flagged. Conditions are acceptable, but reduce risk and execute with care.";
   }
-  if (totalScore >= 70) {
-    return "Valid setup. Consider reduced risk.";
+
+  if (strongScore) {
+    return "Strong score, but both setup and management mistakes are present. Use strong caution and review process quality before entry.";
   }
-  if (totalScore >= 60) {
-    return "Moderate setup. Wait or reduce risk.";
+  if (weakScore) {
+    return "Weak score with both setup and management mistakes. Strong review recommended before any next trade.";
   }
-  return "Low-quality setup. Avoid trade.";
+  return "Both setup and management mistake areas are present. Review the full process and tighten rules before proceeding.";
 }
 
 export function OpportunityDecisionEngine({
@@ -130,6 +162,8 @@ export function OpportunityDecisionEngine({
   setTarget,
   target2,
   setTarget2,
+  setupMistakes,
+  managementMistakes,
 }: OpportunityDecisionEngineProps) {
   const totalScoreForDisplay = normalizedTotalScore(
     koiEval.totalScore,
@@ -155,7 +189,8 @@ export function OpportunityDecisionEngine({
   const weaknesses = [...coachComponentScores]
     .sort((a, b) => (a.value as number) / a.max - (b.value as number) / b.max)
     .slice(0, 3);
-  const coachGuidance = getCoachGuidance(totalScoreForDisplay);
+  const mistakeSeverity = getMistakeSeverity(setupMistakes, managementMistakes);
+  const coachGuidance = getCoachGuidance(totalScoreForDisplay, mistakeSeverity);
 
   return (
     <div style={koiStyles.card}>
@@ -624,6 +659,16 @@ export function OpportunityDecisionEngine({
                 {weaknesses.length > 0
                   ? weaknesses.map((item) => item.label).join(", ")
                   : "—"}
+              </span>
+            </div>
+            <div style={koiStyles.breakdownRow}>
+              <span>Mistake severity</span>
+              <span style={koiStyles.breakdownPts}>
+                {mistakeSeverity === "none"
+                  ? "None"
+                  : mistakeSeverity === "warning"
+                    ? "Warning"
+                    : "High"}
               </span>
             </div>
             <div style={{ ...koiStyles.breakdownRow, ...koiStyles.breakdownRowLast }}>

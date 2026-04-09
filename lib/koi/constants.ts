@@ -17,6 +17,11 @@ export const ALL_MISTAKES: Mistake[] = [
 /** Backward-compatible alias used by runtime parsing/selectors. */
 export const ALL_KNOWN_MISTAKE_TAGS: Mistake[] = [...ALL_MISTAKES];
 
+/** Short UI definitions for mistake labels (tooltips/help). */
+export const MISTAKE_DEFINITIONS: Partial<Record<Mistake, string>> = {
+  "Moved Stop": "Moved stop in an unprofitable direction",
+};
+
 export const KOI_FIELD_HELP = {
   entryZone: "Is this a demand (buy) or supply (sell) zone?",
   zoneLocation:

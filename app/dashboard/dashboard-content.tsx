@@ -18,6 +18,7 @@ import { TraderScorecard } from "@/components/TraderScorecard";
 import { OpportunityDecisionEngine } from "@/components/ode/OpportunityDecisionEngine";
 import { SystemChecksPanel } from "@/components/ode/SystemChecksPanel";
 import { TradeLifecycleTable } from "@/components/trade/TradeLifecycleTable";
+import { MistakesSelector } from "@/components/trade/MistakesSelector";
 import { TradeSetupPanel } from "@/components/trade/TradeSetupPanel";
 import { dashboardStyles } from "@/lib/koi/dashboard-styles";
 import { evaluateKoiSetup, getKoiTradeDecision } from "@/lib/koi/ode";
@@ -28,7 +29,9 @@ import {
 import { clearTradesStorage } from "@/lib/koi/storage";
 import {
   aggregateMistakesForPersistence,
+  MANAGEMENT_STAGE_MISTAKES,
   normalizeStageMistakes,
+  SETUP_STAGE_MISTAKES,
 } from "@/lib/koi/stage-mistakes";
 import {
   buildNewTrade,
@@ -91,6 +94,9 @@ export function DashboardContent() {
   const [selectedSetupMistakes, setSelectedSetupMistakes] = useState<Mistake[]>(
     []
   );
+  const [selectedManagementMistakes, setSelectedManagementMistakes] = useState<
+    Mistake[]
+  >([]);
   const [trades, setTrades] = useState<Trade[]>([]);
   const [exitInputs, setExitInputs] = useState<Record<number, string>>({});
   const [loadingTrades, setLoadingTrades] = useState(true);
@@ -181,6 +187,14 @@ export function DashboardContent() {
 
   function handleSetupMistakeToggle(mistake: Mistake) {
     setSelectedSetupMistakes((prev) =>
+      prev.includes(mistake)
+        ? prev.filter((m) => m !== mistake)
+        : [...prev, mistake]
+    );
+  }
+
+  function handleManagementMistakeToggle(mistake: Mistake) {
+    setSelectedManagementMistakes((prev) =>
       prev.includes(mistake)
         ? prev.filter((m) => m !== mistake)
         : [...prev, mistake]
@@ -734,6 +748,8 @@ export function DashboardContent() {
             setTarget={setTarget}
             target2={target2}
             setTarget2={setTarget2}
+            setupMistakes={selectedSetupMistakes}
+            managementMistakes={selectedManagementMistakes}
           />
 
           <SystemChecksPanel
@@ -771,11 +787,49 @@ export function DashboardContent() {
             tradeSetupDerived={tradeSetupDerived}
             onCreateSetup={handleCreateSetup}
             onClearTrades={handleClearTrades}
-            selectedMistakes={selectedSetupMistakes}
-            onToggleMistake={handleSetupMistakeToggle}
           />
 
-          <div style={styles.card}>
+          <div style={{ ...styles.card, padding: "16px", marginTop: "20px" }}>
+            <h2 style={{ ...styles.sectionTitle, fontSize: "22px", marginBottom: "14px" }}>
+              Mistakes
+            </h2>
+            <div style={{ marginBottom: "14px" }}>
+              <div
+                style={{
+                  ...styles.small,
+                  fontWeight: 600,
+                  marginBottom: "6px",
+                  color: "#667085",
+                }}
+              >
+                Setup Mistakes
+              </div>
+              <MistakesSelector
+                mistakes={[...SETUP_STAGE_MISTAKES] as Mistake[]}
+                selectedMistakes={selectedSetupMistakes}
+                onToggleMistake={handleSetupMistakeToggle}
+              />
+            </div>
+            <div>
+              <div
+                style={{
+                  ...styles.small,
+                  fontWeight: 600,
+                  marginBottom: "6px",
+                  color: "#667085",
+                }}
+              >
+                Management Mistakes
+              </div>
+              <MistakesSelector
+                mistakes={[...MANAGEMENT_STAGE_MISTAKES] as Mistake[]}
+                selectedMistakes={selectedManagementMistakes}
+                onToggleMistake={handleManagementMistakeToggle}
+              />
+            </div>
+          </div>
+
+          <div style={{ ...styles.card, marginTop: "20px" }}>
             <h2 style={styles.sectionTitle}>Trade Lifecycle</h2>
             {trades.length === 0 ? (
               <p style={{ margin: "8px 0 0", color: "#94a3b8", fontSize: 14 }}>
@@ -788,8 +842,6 @@ export function DashboardContent() {
               setExitInputs={setExitInputs}
               updateTradeStatus={updateTradeStatus}
               finalizeTrade={finalizeTrade}
-              persistStageMistakesForTrade={persistStageMistakesForTrade}
-              setReviewCompleted={handleSetReviewCompleted}
             />
           </div>
           </>

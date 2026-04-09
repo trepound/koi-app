@@ -1,4 +1,5 @@
 import type { Mistake } from "./types";
+import { isManagementStageMistake } from "./stage-mistakes";
 
 export const EXECUTION_BUCKET_MAX = {
   discipline: 20,
@@ -27,6 +28,7 @@ export function calculateExecutionBreakdown(mistakes: Mistake[]) {
   let emotional: number = EXECUTION_BUCKET_MAX.emotional;
 
   for (const mistake of mistakes) {
+    if (!isManagementStageMistake(mistake)) continue;
     const config = MISTAKE_BUCKETS[mistake];
     if (!config) continue;
 

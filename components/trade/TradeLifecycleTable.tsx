@@ -3,21 +3,9 @@
 import type { CSSProperties, Dispatch, SetStateAction } from "react";
 import { useState } from "react";
 import { dashboardStyles as styles } from "@/lib/koi/dashboard-styles";
-import {
-  calculateExecutionBreakdown,
-  EXECUTION_BUCKET_MAX,
-} from "@/lib/koi/mistake-penalties";
-import {
-  MANAGEMENT_STAGE_MISTAKES,
-  normalizeStageMistakes,
-  SETUP_STAGE_MISTAKES,
-} from "@/lib/koi/stage-mistakes";
-import type { Mistake, Trade, TradeStatus } from "@/lib/koi/types";
-import { MistakesSelector } from "./MistakesSelector";
-import { TradeFinalReviewCoaching } from "./TradeFinalReviewCoaching";
-
-const SETUP_OPTIONS = [...SETUP_STAGE_MISTAKES] as Mistake[];
-const MGMT_OPTIONS = [...MANAGEMENT_STAGE_MISTAKES] as Mistake[];
+import { normalizeStageMistakes } from "@/lib/koi/stage-mistakes";
+import type { Trade, TradeStatus } from "@/lib/koi/types";
+import { MistakeSummary } from "./MistakeSummary";
 
 const subLabelStyle: CSSProperties = {
   fontSize: 11,
@@ -27,109 +15,28 @@ const subLabelStyle: CSSProperties = {
   letterSpacing: "0.02em",
 };
 
-const panelStyle: CSSProperties = {
-  border: "1px solid rgba(148,163,184,0.25)",
-  borderRadius: 6,
-  padding: "8px 10px",
-  background: "rgba(15,23,42,0.35)",
-  fontSize: 12,
-  lineHeight: 1.35,
-};
-
 export function TradeLifecycleTable({
   trades,
   exitInputs,
   setExitInputs,
   updateTradeStatus,
   finalizeTrade,
-  persistStageMistakesForTrade,
-  setReviewCompleted,
 }: {
   trades: Trade[];
   exitInputs: Record<number, string>;
   setExitInputs: Dispatch<SetStateAction<Record<number, string>>>;
   updateTradeStatus: (id: number, status: TradeStatus) => void;
   finalizeTrade: (id: number) => void;
-  persistStageMistakesForTrade: (
-    id: number,
-    partial: { setup?: Mistake[]; management?: Mistake[] }
-  ) => Promise<void>;
-  setReviewCompleted: (id: number, completed: boolean) => Promise<void>;
 }) {
-  const [setupDraft, setSetupDraft] = useState<Record<number, Mistake[]>>({});
-  const [mgmtDraft, setMgmtDraft] = useState<Record<number, Mistake[]>>({});
+  const [expandedByTradeId, setExpandedByTradeId] = useState<
+    Record<number, boolean>
+  >({});
+  const [filledPriceByTradeId, setFilledPriceByTradeId] = useState<
+    Record<number, string>
+  >({});
 
-  function getSetup(trade: Trade): Mistake[] {
-    return setupDraft[trade.id] ?? normalizeStageMistakes(trade).setup;
-  }
-
-  function getMgmt(trade: Trade): Mistake[] {
-    return mgmtDraft[trade.id] ?? normalizeStageMistakes(trade).management;
-  }
-
-  function toggleSetup(trade: Trade, m: Mistake) {
-    setSetupDraft((prev) => {
-      const cur = prev[trade.id] ?? normalizeStageMistakes(trade).setup;
-      const next = cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m];
-      return { ...prev, [trade.id]: next };
-    });
-  }
-
-  function toggleMgmt(trade: Trade, m: Mistake) {
-    setMgmtDraft((prev) => {
-      const cur = prev[trade.id] ?? normalizeStageMistakes(trade).management;
-      const next = cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m];
-      return { ...prev, [trade.id]: next };
-    });
-  }
-
-  async function handleApplySetup(trade: Trade) {
-    try {
-      await persistStageMistakesForTrade(trade.id, { setup: getSetup(trade) });
-      setSetupDraft((prev) => {
-        const n = { ...prev };
-        delete n[trade.id];
-        return n;
-      });
-    } catch {
-      /* parent alerts */
-    }
-  }
-
-  async function handleApplyMgmt(trade: Trade) {
-    try {
-      await persistStageMistakesForTrade(trade.id, {
-        management: getMgmt(trade),
-      });
-      setMgmtDraft((prev) => {
-        const n = { ...prev };
-        delete n[trade.id];
-        return n;
-      });
-    } catch {
-      /* parent alerts */
-    }
-  }
-
-  async function handleApplyReview(trade: Trade) {
-    try {
-      await persistStageMistakesForTrade(trade.id, {
-        setup: getSetup(trade),
-        management: getMgmt(trade),
-      });
-      setSetupDraft((prev) => {
-        const n = { ...prev };
-        delete n[trade.id];
-        return n;
-      });
-      setMgmtDraft((prev) => {
-        const n = { ...prev };
-        delete n[trade.id];
-        return n;
-      });
-    } catch {
-      /* parent alerts */
-    }
+  function toggleExpanded(tradeId: number) {
+    setExpandedByTradeId((prev) => ({ ...prev, [tradeId]: !prev[tradeId] }));
   }
 
   if (!trades.length) {
@@ -142,6 +49,7 @@ export function TradeLifecycleTable({
         <thead>
           <tr>
             <th style={styles.th}>Symbol</th>
+            <th style={styles.th}>Action</th>
             <th style={styles.th}>Status</th>
             <th style={styles.th}>Side</th>
             <th style={styles.th}>Position Size</th>
@@ -164,32 +72,82 @@ export function TradeLifecycleTable({
             <th style={styles.th}>Total</th>
             <th style={styles.th}>Trade Grade</th>
             <th style={styles.th}>Mistakes</th>
-            <th style={styles.th}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {trades.map((trade) => {
-            const managementForExec = getMgmt(trade);
-            const breakdown = calculateExecutionBreakdown(managementForExec);
-            const disciplineDamaged =
-              breakdown.discipline < EXECUTION_BUCKET_MAX.discipline;
-            const sizingDamaged = breakdown.sizing < EXECUTION_BUCKET_MAX.sizing;
-            const emotionalDamaged =
-              breakdown.emotional < EXECUTION_BUCKET_MAX.emotional;
-
-            const showExecutionBreakdown =
-              trade.status === "ACTIVE" || trade.status === "CLOSED";
-
-            const setupBeforeFill =
-              trade.status === "PLANNED" ||
-              trade.status === "PENDING" ||
-              trade.status === "MISSED";
+            const isReviewing = trade.status === "CLOSED" && expandedByTradeId[trade.id];
 
             return (
               <tr key={trade.id}>
                 <td style={styles.td}>{trade.symbol}</td>
+                <td style={{ ...styles.td, verticalAlign: "middle" }}>
+                  <div style={styles.rowActions}>
+                    {trade.status === "PLANNED" ? (
+                      <button
+                        style={styles.buttonPrimary}
+                        onClick={() => updateTradeStatus(trade.id, "PENDING")}
+                      >
+                        Place Order
+                      </button>
+                    ) : null}
+                    {trade.status === "PENDING" ? (
+                      <>
+                        <input
+                          style={{ ...styles.input, width: "130px" }}
+                          placeholder="Filled / Entry Price"
+                          value={filledPriceByTradeId[trade.id] ?? ""}
+                          onChange={(e) =>
+                            setFilledPriceByTradeId((prev) => ({
+                              ...prev,
+                              [trade.id]: e.target.value,
+                            }))
+                          }
+                        />
+                        <button
+                          style={styles.buttonPrimary}
+                          onClick={() => updateTradeStatus(trade.id, "ACTIVE")}
+                        >
+                          Mark as Filled
+                        </button>
+                      </>
+                    ) : null}
+                    {trade.status === "ACTIVE" ? (
+                      <>
+                        <input
+                          style={{ ...styles.input, width: "120px" }}
+                          placeholder="Exit"
+                          value={exitInputs[trade.id] ?? ""}
+                          onChange={(e) =>
+                            setExitInputs((prev) => ({
+                              ...prev,
+                              [trade.id]: e.target.value,
+                            }))
+                          }
+                        />
+                        <button
+                          style={styles.buttonWarn}
+                          onClick={() => finalizeTrade(trade.id)}
+                        >
+                          Close
+                        </button>
+                      </>
+                    ) : null}
+                    {trade.status === "CLOSED" ? (
+                      <button
+                        style={styles.buttonGhost}
+                        type="button"
+                        onClick={() => toggleExpanded(trade.id)}
+                      >
+                        {isReviewing ? "Close Review" : "Review"}
+                      </button>
+                    ) : null}
+                  </div>
+                </td>
                 <td style={styles.td}>
-                  <span style={styles.badge}>{trade.status}</span>
+                  <span style={styles.badge}>
+                    {trade.status === "PLANNED" ? "WAITING" : trade.status}
+                  </span>
                 </td>
                 <td style={styles.td}>{trade.side}</td>
                 <td style={styles.td}>
@@ -238,187 +196,11 @@ export function TradeLifecycleTable({
                 </td>
                 <td style={styles.td}>{trade.finalGrade ?? "-"}</td>
                 <td style={styles.td}>
-                  <div style={{ display: "grid", gap: 8, minWidth: 220 }}>
-                    {setupBeforeFill ? (
-                      <>
-                        <div style={subLabelStyle}>Setup (before trade)</div>
-                        <MistakesSelector
-                          mistakes={SETUP_OPTIONS}
-                          selectedMistakes={getSetup(trade)}
-                          onToggleMistake={(m) => toggleSetup(trade, m)}
-                        />
-                        <button
-                          type="button"
-                          style={styles.buttonGhost}
-                          onClick={() => void handleApplySetup(trade)}
-                        >
-                          Apply setup mistakes
-                        </button>
-                      </>
-                    ) : null}
-
-                    {trade.status === "ACTIVE" ? (
-                      <>
-                        <div style={subLabelStyle}>Setup recorded</div>
-                        <div style={{ fontSize: 12, opacity: 0.9 }}>
-                          {getSetup(trade).length
-                            ? getSetup(trade).join(", ")
-                            : "None"}
-                        </div>
-                        <div style={subLabelStyle}>Management (active trade)</div>
-                        <MistakesSelector
-                          mistakes={MGMT_OPTIONS}
-                          selectedMistakes={getMgmt(trade)}
-                          onToggleMistake={(m) => toggleMgmt(trade, m)}
-                        />
-                        <button
-                          type="button"
-                          style={styles.buttonGhost}
-                          onClick={() => void handleApplyMgmt(trade)}
-                        >
-                          Apply management mistakes
-                        </button>
-                      </>
-                    ) : null}
-
-                    {trade.status === "CLOSED" ? (
-                      <>
-                        <div style={subLabelStyle}>Review — setup</div>
-                        <MistakesSelector
-                          mistakes={SETUP_OPTIONS}
-                          selectedMistakes={getSetup(trade)}
-                          onToggleMistake={(m) => toggleSetup(trade, m)}
-                        />
-                        <div style={subLabelStyle}>Review — management</div>
-                        <MistakesSelector
-                          mistakes={MGMT_OPTIONS}
-                          selectedMistakes={getMgmt(trade)}
-                          onToggleMistake={(m) => toggleMgmt(trade, m)}
-                        />
-                        <button
-                          type="button"
-                          style={styles.buttonPrimary}
-                          onClick={() => void handleApplyReview(trade)}
-                        >
-                          Save review mistakes
-                        </button>
-                        <label
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            fontSize: 12,
-                            cursor: "pointer",
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={trade.reviewCompleted === true}
-                            onChange={(e) =>
-                              void setReviewCompleted(trade.id, e.target.checked)
-                            }
-                          />
-                          Review completed
-                        </label>
-                        <TradeFinalReviewCoaching
-                          setupMistakes={getSetup(trade)}
-                          managementMistakes={getMgmt(trade)}
-                        />
-                      </>
-                    ) : null}
-
-                    {showExecutionBreakdown ? (
-                      <div style={panelStyle}>
-                        <div style={{ opacity: 0.95, marginBottom: 4 }}>
-                          Execution breakdown (management only)
-                        </div>
-                        <div
-                          style={{
-                            color: disciplineDamaged ? "#f59e0b" : undefined,
-                          }}
-                        >
-                          Discipline: {breakdown.discipline}/
-                          {EXECUTION_BUCKET_MAX.discipline}
-                        </div>
-                        <div
-                          style={{ color: sizingDamaged ? "#f59e0b" : undefined }}
-                        >
-                          Sizing / Risk: {breakdown.sizing}/
-                          {EXECUTION_BUCKET_MAX.sizing}
-                        </div>
-                        <div
-                          style={{
-                            color: emotionalDamaged ? "#f59e0b" : undefined,
-                          }}
-                        >
-                          Emotional Control: {breakdown.emotional}/
-                          {EXECUTION_BUCKET_MAX.emotional}
-                        </div>
-                        <div style={{ marginTop: 2, fontWeight: 700 }}>
-                          Execution score: {breakdown.executionScore}/50
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </td>
-                <td style={styles.td}>
-                  <div style={styles.rowActions}>
-                    {trade.status === "PLANNED" && (
-                      <>
-                        <button
-                          style={styles.buttonPrimary}
-                          onClick={() => updateTradeStatus(trade.id, "PENDING")}
-                        >
-                          Place Order
-                        </button>
-                        <button
-                          style={styles.buttonDanger}
-                          onClick={() => updateTradeStatus(trade.id, "MISSED")}
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    )}
-
-                    {trade.status === "PENDING" && (
-                      <>
-                        <button
-                          style={styles.buttonPrimary}
-                          onClick={() => updateTradeStatus(trade.id, "ACTIVE")}
-                        >
-                          Mark Filled
-                        </button>
-                        <button
-                          style={styles.buttonDanger}
-                          onClick={() => updateTradeStatus(trade.id, "MISSED")}
-                        >
-                          Not Filled
-                        </button>
-                      </>
-                    )}
-
-                    {trade.status === "ACTIVE" && (
-                      <>
-                        <input
-                          style={{ ...styles.input, width: "120px" }}
-                          placeholder="Exit"
-                          value={exitInputs[trade.id] ?? ""}
-                          onChange={(e) =>
-                            setExitInputs((prev) => ({
-                              ...prev,
-                              [trade.id]: e.target.value,
-                            }))
-                          }
-                        />
-                        <button
-                          style={styles.buttonWarn}
-                          onClick={() => finalizeTrade(trade.id)}
-                        >
-                          Close Trade
-                        </button>
-                      </>
-                    )}
-                  </div>
+                  <MistakeSummary
+                    setupMistakes={trade.setupMistakes}
+                    managementMistakes={trade.managementMistakes}
+                    mistakes={trade.mistakes}
+                  />
                 </td>
               </tr>
             );

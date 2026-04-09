@@ -133,10 +133,10 @@ export const dashboardStyles: Record<string, CSSProperties> = {
     marginRight: "8px",
   },
   mistakesBox: {
-    marginTop: "16px",
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-    gap: "10px",
+    marginTop: "8px",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "12px",
   },
   mistakeItem: {
     display: "flex",

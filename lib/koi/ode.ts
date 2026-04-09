@@ -106,12 +106,7 @@ export function evaluateKoiSetup(args: {
 
   const trendPtsProg =
     args.trend !== "" && args.zoneSide !== ""
-      ? getKoiTrendPoints(
-          getKoiTrendRelation(
-            args.trend as KoiTrendValue,
-            args.zoneSide as KoiZoneValue
-          )
-        )
+      ? getKoiTrendPoints(args.trend as KoiTrendValue)
       : null;
   const htfPtsProg =
     args.zoneSide !== "" && args.htfLocation !== ""
@@ -215,7 +210,6 @@ export function evaluateKoiSetup(args: {
 
   const isMiddle = htfLocation === "Middle";
   const isSideways = trend === "Sideways";
-  const trendRelation = getKoiTrendRelation(trend, zoneSide);
   const step0Pass = !(isMiddle && isSideways);
 
   const risk = Math.abs(entryNum! - stopNum!);
@@ -223,7 +217,7 @@ export function evaluateKoiSetup(args: {
   const opportunityRewardRisk = risk > 0 ? reward2 / risk : 0;
   const priceThresholdPass = opportunityRewardRisk >= 1.5;
 
-  const trendPts = getKoiTrendPoints(trendRelation);
+  const trendPts = getKoiTrendPoints(trend);
   const htfPts =
     htfLocation === "Middle"
       ? 5
