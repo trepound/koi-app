@@ -76,6 +76,30 @@ export function TradeSetupPanel({
   onToggleMistake,
   mistakeOptions = [...SETUP_STAGE_MISTAKES] as Mistake[],
 }: TradeSetupPanelProps) {
+  const formatCurrencyDisplay = (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed === "") return "—";
+    const num = Number(trimmed);
+    if (!Number.isFinite(num) || num < 0) return "—";
+    return `$${num.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  };
+
+  const formatPercentDisplay = (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed === "") return "—";
+    const num = Number(trimmed);
+    if (!Number.isFinite(num) || num < 0) return "—";
+    return `${num.toFixed(1)}%`;
+  };
+
+  const capitalRequired = (() => {
+    const entryNum = Number(entry.trim());
+    const sizeNum = Number(size.trim());
+    if (!Number.isFinite(entryNum) || !Number.isFinite(sizeNum)) return null;
+    if (entryNum <= 0 || sizeNum <= 0) return null;
+    return entryNum * sizeNum;
+  })();
+
   return (
     <div style={styles.card}>
       <h2 style={styles.sectionTitle}>Trade Setup</h2>
@@ -99,21 +123,6 @@ export function TradeSetupPanel({
               onChange={(e) => setSymbol(e.target.value)}
             />
           </label>
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: "10px",
-              alignItems: "center",
-            }}
-          >
-            <button style={styles.buttonPrimary} onClick={onCreateSetup}>
-              Create Setup
-            </button>
-            <button style={styles.buttonDanger} onClick={onClearTrades}>
-              Clear Trades
-            </button>
-          </div>
         </div>
 
         <label style={{ margin: 0 }}>
@@ -159,7 +168,15 @@ export function TradeSetupPanel({
           />
         </label>
 
-        <div style={styles.tradeSetupSubheading}>Target allocation %</div>
+        <div style={styles.tradeSetupSubheading}>Execution Plan</div>
+        <p style={{ ...styles.small, gridColumn: "1 / -1", margin: 0 }}>
+          Position size auto-fills from risk ÷ |Entry − Stop| when Account Size,
+          Risk %, Entry, and Stop are valid. Override anytime; change Account, Risk
+          %, Entry, or Stop to return to auto (floored) size.
+        </p>
+        <div style={{ ...styles.small, gridColumn: "1 / -1", margin: 0 }}>
+          Target allocations
+        </div>
         <label style={{ margin: 0 }}>
           <span style={styles.tradeSetupFieldLabel}>Target 1 Allocation %</span>
           <input
@@ -217,94 +234,90 @@ export function TradeSetupPanel({
           remainder at Target 2.
         </p>
 
-        <div style={styles.tradeSetupSubheading}>Position sizing</div>
-        <label style={{ margin: 0 }}>
-          <span style={styles.tradeSetupFieldLabel}>Account Size</span>
+        <div style={styles.tradeSetupCompactPlan}>
+          <div style={styles.tradeSetupCompactRow}>
+            <div style={styles.tradeSetupCompactItem}>
+              <div style={styles.tradeSetupCompactItemLabel}>Account Size</div>
+              <div style={styles.tradeSetupCompactItemValue}>
+                {formatCurrencyDisplay(accountSize)}
+              </div>
+              <input
+                style={{ ...styles.input, padding: "6px 8px", marginTop: "3px" }}
+                placeholder="Account Size"
+                inputMode="decimal"
+                value={accountSize}
+                onChange={(e) => {
+                  setPositionSizeManual(false);
+                  setAccountSize(e.target.value);
+                }}
+              />
+            </div>
+            <div style={styles.tradeSetupCompactItem}>
+              <div style={styles.tradeSetupCompactItemLabel}>Risk %</div>
+              <div style={styles.tradeSetupCompactItemValue}>
+                {formatPercentDisplay(riskPercent)}
+              </div>
+              <input
+                style={{ ...styles.input, padding: "6px 8px", marginTop: "3px" }}
+                placeholder="Risk %"
+                inputMode="decimal"
+                value={riskPercent}
+                onChange={(e) => {
+                  setPositionSizeManual(false);
+                  setRiskPercent(e.target.value);
+                }}
+              />
+            </div>
+            <div style={styles.tradeSetupCompactItem}>
+              <div style={styles.tradeSetupCompactItemLabel}>Risk Amount</div>
+              <div style={styles.tradeSetupCompactItemValue}>
+                {tradeSetupDerived.riskAmount !== null
+                  ? `$${tradeSetupDerived.riskAmount.toLocaleString(undefined, {
+                      maximumFractionDigits: 0,
+                    })}`
+                  : "—"}
+              </div>
+            </div>
+            <div style={styles.tradeSetupCompactItem}>
+              <div style={styles.tradeSetupCompactItemLabel}>
+                Weighted R:R (based on allocations)
+              </div>
+              <div style={styles.tradeSetupCompactItemValue}>
+                {tradeSetupDerived.weightedRR !== null
+                  ? `${tradeSetupDerived.weightedRR.toFixed(2)}:1`
+                  : "—"}
+              </div>
+            </div>
+          </div>
+          <div style={{ ...styles.tradeSetupCompactRow, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+            <div style={styles.tradeSetupCompactItem}>
+              <div style={styles.tradeSetupCompactItemLabel}>Position Size</div>
+              <div style={styles.tradeSetupCompactItemValue}>
+                {size.trim() !== "" ? size : "—"}
+              </div>
+            </div>
+            <div style={styles.tradeSetupCompactItem}>
+              <div style={styles.tradeSetupCompactItemLabel}>Capital Required</div>
+              <div style={styles.tradeSetupCompactItemValue}>
+                {capitalRequired !== null
+                  ? `$${capitalRequired.toLocaleString(undefined, {
+                      maximumFractionDigits: 0,
+                    })}`
+                  : "—"}
+              </div>
+            </div>
+          </div>
           <input
-            style={styles.input}
-            placeholder="Account Size"
+            style={{ ...styles.tradeSetupPositionInput, marginTop: "2px" }}
+            placeholder="Position size (auto or manual)"
             inputMode="decimal"
-            value={accountSize}
+            value={size}
             onChange={(e) => {
-              setPositionSizeManual(false);
-              setAccountSize(e.target.value);
+              setPositionSizeManual(true);
+              setSize(e.target.value);
             }}
           />
-        </label>
-        <label style={{ margin: 0 }}>
-          <span style={styles.tradeSetupFieldLabel}>Risk %</span>
-          <input
-            style={styles.input}
-            placeholder="Risk % (e.g. 1 = 1%)"
-            inputMode="decimal"
-            value={riskPercent}
-            onChange={(e) => {
-              setPositionSizeManual(false);
-              setRiskPercent(e.target.value);
-            }}
-          />
-        </label>
-
-        <div style={styles.tradeSetupExecGrid}>
-          <div style={styles.tradeSetupExecCard}>
-            <div style={styles.tradeSetupExecLabel}>Risk amount</div>
-            <div style={styles.tradeSetupExecValue}>
-              {tradeSetupDerived.riskAmount !== null
-                ? tradeSetupDerived.riskAmount.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })
-                : "—"}
-            </div>
-            <div style={styles.tradeSetupExecHint}>Account Size × Risk %</div>
-          </div>
-          <div style={styles.tradeSetupExecCard}>
-            <div style={styles.tradeSetupExecLabel}>Position size</div>
-            <div style={styles.tradeSetupExecValue}>
-              {size.trim() !== "" ? size : "—"}
-            </div>
-            <div style={styles.tradeSetupExecHint}>
-              Risk amount ÷ |Entry − Stop|, floored (auto); edit below to override.
-            </div>
-            <input
-              style={styles.tradeSetupPositionInput}
-              placeholder="Position size (auto or manual)"
-              inputMode="decimal"
-              value={size}
-              onChange={(e) => {
-                setPositionSizeManual(true);
-                setSize(e.target.value);
-              }}
-            />
-          </div>
         </div>
-
-        <div style={styles.tradeSetupMetricsRow}>
-          <div style={styles.tradeSetupMetricTile}>
-            <div style={styles.tradeSetupMetricLabel}>Weighted R:R</div>
-            <div style={styles.tradeSetupMetricValue}>
-              {tradeSetupDerived.weightedRR !== null
-                ? `${tradeSetupDerived.weightedRR.toFixed(2)}:1`
-                : "—"}
-            </div>
-            <div
-              style={{
-                ...styles.small,
-                marginTop: "6px",
-                color: "#9bb0d1",
-                fontSize: "11px",
-              }}
-            >
-              Alloc-weighted targets ÷ |Entry − Stop|
-            </div>
-          </div>
-        </div>
-
-        <p style={{ ...styles.small, gridColumn: "1 / -1", margin: 0 }}>
-          Position size auto-fills from risk ÷ |Entry − Stop| when Account Size,
-          Risk %, Entry, and Stop are valid. Override anytime; change Account, Risk
-          %, Entry, or Stop to return to auto (floored) size.
-        </p>
         {positionSizeManual && (
           <p
             style={{
@@ -321,12 +334,21 @@ export function TradeSetupPanel({
         )}
       </div>
 
-      <div style={styles.tradeSetupSubheading}>Setup mistakes (before trade)</div>
+      <div style={styles.tradeSetupSubheading}>Setup Discipline</div>
       <MistakesSelector
         mistakes={mistakeOptions}
         selectedMistakes={selectedMistakes}
         onToggleMistake={onToggleMistake}
       />
+
+      <div style={styles.tradeSetupActions}>
+        <button style={styles.buttonPrimary} onClick={onCreateSetup}>
+          Create Setup
+        </button>
+        <button style={styles.buttonDanger} onClick={onClearTrades}>
+          Clear Trades
+        </button>
+      </div>
 
       <p style={{ ...styles.small, marginTop: "12px" }}>
         Setup Grade is assigned by score, not by opinion.

@@ -311,6 +311,41 @@ export const dashboardStyles: Record<string, CSSProperties> = {
     fontWeight: 700,
     outline: "none",
   },
+  tradeSetupCompactPlan: {
+    gridColumn: "1 / -1",
+    border: "1px solid #d9e1ec",
+    borderRadius: "12px",
+    background: "#f8fafc",
+    padding: "8px 10px",
+    display: "grid",
+    gap: "6px",
+  },
+  tradeSetupCompactRow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: "6px",
+  },
+  tradeSetupCompactItem: {
+    border: "1px solid #e8eef6",
+    borderRadius: "10px",
+    background: "#fff",
+    padding: "6px 8px",
+    minHeight: "48px",
+  },
+  tradeSetupCompactItemLabel: {
+    fontSize: "10px",
+    fontWeight: 600,
+    letterSpacing: ".03em",
+    textTransform: "uppercase",
+    color: "#667085",
+  },
+  tradeSetupCompactItemValue: {
+    marginTop: "2px",
+    fontSize: "16px",
+    fontWeight: 800,
+    color: "#0f172a",
+    lineHeight: 1.2,
+  },
 };
 
 /** ODE + system checks dark panels */

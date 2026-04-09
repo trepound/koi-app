@@ -130,6 +130,7 @@ export type KoiEvalParts = {
   htfLocation: number | null;
   patternStage: number | null;
   imbalance: number | null;
+  freshness: number | null;
   timeAtZone: number | null;
   rewardRisk: number | null;
   rewardRiskPts: number | null;

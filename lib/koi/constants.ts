@@ -14,6 +14,9 @@ export const ALL_MISTAKES: Mistake[] = [
   "Cut Early",
 ];
 
+/** Backward-compatible alias used by runtime parsing/selectors. */
+export const ALL_KNOWN_MISTAKE_TAGS: Mistake[] = [...ALL_MISTAKES];
+
 export const KOI_FIELD_HELP = {
   entryZone: "Is this a demand (buy) or supply (sell) zone?",
   zoneLocation:

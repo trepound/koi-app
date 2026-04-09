@@ -22,13 +22,13 @@ export function getTradeGrade(score: number) {
   return "D";
 }
 
-/** Final opportunity score (setup max 50 + R:R max 10, cap 60). */
+/** Final opportunity score (structure 50 + context/profit 50, cap 100). */
 export function getKoiGradeFromFinalOpportunityScore(score: number): KoiGrade {
-  if (score >= 55) return "A+";
-  if (score >= 50) return "A";
-  if (score >= 44) return "B+";
-  if (score >= 36) return "B";
-  if (score >= 30) return "C";
+  if (score >= 90) return "A+";
+  if (score >= 80) return "A";
+  if (score >= 70) return "B+";
+  if (score >= 60) return "B";
+  if (score >= 50) return "C";
   return "D/F";
 }
 

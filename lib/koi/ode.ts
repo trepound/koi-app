@@ -10,8 +10,8 @@ import {
 } from "./grading";
 import {
   getAverageRewardRiskScorePoints,
+  getKoiFreshnessPoints,
   getKoiImbalancePoints,
-  getKoiPatternPoints,
   getKoiTimeAtZonePoints,
   getKoiTrendPoints,
 } from "./scoring";
@@ -27,6 +27,7 @@ import type {
   KoiTrend,
   KoiTrendRelation,
   KoiZoneSide,
+  Freshness,
 } from "./types";
 
 type KoiTrendValue = Exclude<KoiTrend, "">;
@@ -79,6 +80,7 @@ export function evaluateKoiSetup(args: {
   zoneSide: KoiZoneSide;
   patternStage: KoiPatternStage;
   imbalance: KoiImbalance;
+  freshness: "" | Freshness;
   timeAtZone: KoiTimeAtZone;
   entryPrice: string;
   stopPrice: string;
@@ -94,8 +96,8 @@ export function evaluateKoiSetup(args: {
     args.trend !== "" &&
     args.htfLocation !== "" &&
     args.zoneSide !== "" &&
-    args.patternStage !== "" &&
     args.imbalance !== "" &&
+    args.freshness !== "" &&
     args.timeAtZone !== "" &&
     entryNum !== null &&
     stopNum !== null &&
@@ -123,13 +125,13 @@ export function evaluateKoiSetup(args: {
           return htfLoc === "Retail" ? 10 : 4;
         })()
       : null;
-  const patternPtsProg =
-    args.patternStage !== ""
-      ? getKoiPatternPoints(args.patternStage as KoiPatternStage)
-      : null;
   const imbalancePtsProg =
     args.imbalance !== ""
       ? getKoiImbalancePoints(args.imbalance as KoiImbalanceValue)
+      : null;
+  const freshnessPtsProg =
+    args.freshness !== ""
+      ? getKoiFreshnessPoints(args.freshness as Freshness)
       : null;
   const timePtsProg =
     args.timeAtZone !== ""
@@ -137,11 +139,9 @@ export function evaluateKoiSetup(args: {
       : null;
 
   const setupScorePartial =
-    (trendPtsProg ?? 0) +
-    (htfPtsProg ?? 0) +
-    (patternPtsProg ?? 0) +
-    (imbalancePtsProg ?? 0) +
-    (timePtsProg ?? 0);
+    (imbalancePtsProg ?? 0) + (timePtsProg ?? 0) + (freshnessPtsProg ?? 0);
+
+  const contextScorePartial = (trendPtsProg ?? 0) + (htfPtsProg ?? 0);
 
   let averageRewardRiskProg: number | undefined;
   let rewardRiskPtsProg: number | undefined;
@@ -161,8 +161,8 @@ export function evaluateKoiSetup(args: {
   }
 
   const progressiveTotal = Math.min(
-    setupScorePartial + (rewardRiskPtsProg ?? 0),
-    60
+    setupScorePartial + contextScorePartial + (rewardRiskPtsProg ?? 0),
+    100
   );
   const progressiveGrade =
     setupScorePartial > 0 || (rewardRiskPtsProg ?? 0) > 0
@@ -172,8 +172,9 @@ export function evaluateKoiSetup(args: {
   const partsProgressive: KoiEvalParts = {
     trend: trendPtsProg,
     htfLocation: htfPtsProg,
-    patternStage: patternPtsProg,
+    patternStage: null,
     imbalance: imbalancePtsProg,
+    freshness: freshnessPtsProg,
     timeAtZone: timePtsProg,
     rewardRisk:
       averageRewardRiskProg === undefined ? null : averageRewardRiskProg,
@@ -208,8 +209,8 @@ export function evaluateKoiSetup(args: {
   const trend = args.trend as KoiTrendValue;
   const htfLocation = args.htfLocation as KoiLocationValue;
   const zoneSide = args.zoneSide as KoiZoneValue;
-  const patternStage = args.patternStage as KoiPatternValue;
   const imbalance = args.imbalance as KoiImbalanceValue;
+  const freshness = args.freshness as Freshness;
   const timeAtZone = args.timeAtZone as KoiTimeValue;
 
   const isMiddle = htfLocation === "Middle";
@@ -233,15 +234,19 @@ export function evaluateKoiSetup(args: {
         : htfLocation === "Retail"
           ? 10
           : 4;
-  const patternPts = getKoiPatternPoints(patternStage);
   const imbalancePts = getKoiImbalancePoints(imbalance);
+  const freshnessPts = getKoiFreshnessPoints(freshness);
   const timePts = getKoiTimeAtZonePoints(timeAtZone);
-  const setupScoreSum = trendPts + htfPts + patternPts + imbalancePts + timePts;
+  const structureScore = imbalancePts + timePts + freshnessPts;
+  const contextScore = trendPts + htfPts;
   const rewardRiskPts = priceThresholdPass
     ? getAverageRewardRiskScorePoints(opportunityRewardRisk)
     : 0;
-  const finalOpportunityScore = Math.min(setupScoreSum + rewardRiskPts, 60);
-  const scoreThresholdPass = finalOpportunityScore >= 30;
+  const finalOpportunityScore = Math.min(
+    structureScore + contextScore + rewardRiskPts,
+    100
+  );
+  const scoreThresholdPass = finalOpportunityScore >= 50;
   const tradeAllowed = step0Pass && priceThresholdPass && scoreThresholdPass;
   const grade = tradeAllowed
     ? getKoiGradeFromFinalOpportunityScore(finalOpportunityScore)
@@ -250,8 +255,9 @@ export function evaluateKoiSetup(args: {
   const partsNumeric: KoiEvalParts = {
     trend: trendPts,
     htfLocation: htfPts,
-    patternStage: patternPts,
+    patternStage: null,
     imbalance: imbalancePts,
+    freshness: freshnessPts,
     timeAtZone: timePts,
     rewardRisk: opportunityRewardRisk,
     rewardRiskPts,
@@ -270,7 +276,7 @@ export function evaluateKoiSetup(args: {
       },
       recommendedAction: "No trade",
       averageRewardRisk: opportunityRewardRisk,
-      setupScore: setupScoreSum,
+      setupScore: structureScore + contextScore,
       rewardRiskPoints: rewardRiskPts,
       totalScore: finalOpportunityScore,
       grade,
@@ -292,9 +298,9 @@ export function evaluateKoiSetup(args: {
       },
       recommendedAction: "No trade",
       averageRewardRisk: 0,
-      setupScore: setupScoreSum,
+      setupScore: structureScore + contextScore,
       rewardRiskPoints: 0,
-      totalScore: Math.min(setupScoreSum, 60),
+      totalScore: Math.min(structureScore + contextScore, 100),
       grade: "D/F" as KoiGrade,
       setupQuality: getKoiSetupQuality("D/F"),
       parts: {
@@ -318,7 +324,7 @@ export function evaluateKoiSetup(args: {
       },
       recommendedAction: "No trade",
       averageRewardRisk: opportunityRewardRisk,
-      setupScore: setupScoreSum,
+      setupScore: structureScore + contextScore,
       rewardRiskPoints: rewardRiskPts,
       totalScore: finalOpportunityScore,
       grade,
@@ -340,7 +346,7 @@ export function evaluateKoiSetup(args: {
       },
       recommendedAction: "No trade",
       averageRewardRisk: opportunityRewardRisk,
-      setupScore: setupScoreSum,
+      setupScore: structureScore + contextScore,
       rewardRiskPoints: rewardRiskPts,
       totalScore: finalOpportunityScore,
       grade,
@@ -361,7 +367,7 @@ export function evaluateKoiSetup(args: {
     },
     recommendedAction: getKoiRecommendedAction(grade),
     averageRewardRisk: opportunityRewardRisk,
-    setupScore: setupScoreSum,
+    setupScore: structureScore + contextScore,
     rewardRiskPoints: rewardRiskPts,
     totalScore: finalOpportunityScore,
     grade,

@@ -53,6 +53,55 @@ export type OpportunityDecisionEngineProps = {
 };
 
 const badgeStyle = dashboardStyles.badge as CSSProperties;
+const ODE_SCORE_COLORS = {
+  strong: "#6ee7b7",
+  developing: "#f5d26a",
+  weak: "#f39a9a",
+  neutral: "#e7f0ff",
+} as const;
+
+function isFiniteScore(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function formatScoreFraction(
+  value: number | null | undefined,
+  max: number,
+): string {
+  if (!isFiniteScore(value)) return "—";
+  return `${value} / ${max}`;
+}
+
+function scoreTextColor(value: number | null | undefined, max: number): string {
+  if (!isFiniteScore(value) || max <= 0) return ODE_SCORE_COLORS.neutral;
+  const ratio = value / max;
+  if (ratio >= 0.9) return ODE_SCORE_COLORS.strong;
+  if (ratio >= 0.7) return ODE_SCORE_COLORS.developing;
+  return ODE_SCORE_COLORS.weak;
+}
+
+function normalizedTotalScore(value: number, isComplete: boolean): number | null {
+  // Preserve existing UI behavior: keep total score blank until scoring has started.
+  if (!isComplete && value === 0) return null;
+  return value;
+}
+
+function getCoachGuidance(totalScore: number | null): string {
+  if (!isFiniteScore(totalScore)) return "Complete inputs to get coaching guidance.";
+  if (totalScore >= 90) {
+    return "High-quality opportunity. Structure and context aligned.";
+  }
+  if (totalScore >= 80) {
+    return "Strong setup. Acceptable conditions.";
+  }
+  if (totalScore >= 70) {
+    return "Valid setup. Consider reduced risk.";
+  }
+  if (totalScore >= 60) {
+    return "Moderate setup. Wait or reduce risk.";
+  }
+  return "Low-quality setup. Avoid trade.";
+}
 
 export function OpportunityDecisionEngine({
   koiEval,
@@ -82,6 +131,32 @@ export function OpportunityDecisionEngine({
   target2,
   setTarget2,
 }: OpportunityDecisionEngineProps) {
+  const totalScoreForDisplay = normalizedTotalScore(
+    koiEval.totalScore,
+    koiEval.isComplete,
+  );
+  const structureScoreForDisplay =
+    (koiEval.parts.imbalance ?? 0) +
+    (koiEval.parts.timeAtZone ?? 0) +
+    (koiEval.parts.freshness ?? 0);
+  const contextScoreForDisplay =
+    (koiEval.parts.trend ?? 0) + (koiEval.parts.htfLocation ?? 0);
+  const coachComponentScores = [
+    { label: "Trend", value: koiEval.parts.trend, max: 20 },
+    { label: "Location", value: koiEval.parts.htfLocation, max: 10 },
+    { label: "Imbalance strength", value: koiEval.parts.imbalance, max: 20 },
+    { label: "Time at Zone", value: koiEval.parts.timeAtZone, max: 10 },
+    { label: "Freshness", value: koiEval.parts.freshness, max: 20 },
+    { label: "Profit Margin", value: koiEval.rewardRiskPoints, max: 20 },
+  ].filter((item) => isFiniteScore(item.value));
+  const strengths = [...coachComponentScores]
+    .sort((a, b) => (b.value as number) / b.max - (a.value as number) / a.max)
+    .slice(0, 3);
+  const weaknesses = [...coachComponentScores]
+    .sort((a, b) => (a.value as number) / a.max - (b.value as number) / b.max)
+    .slice(0, 3);
+  const coachGuidance = getCoachGuidance(totalScoreForDisplay);
+
   return (
     <div style={koiStyles.card}>
       <div style={koiStyles.panelHeader}>
@@ -119,11 +194,16 @@ export function OpportunityDecisionEngine({
         <div style={koiStyles.resultGrid}>
           <div style={koiStyles.resultCard}>
             <div style={koiStyles.resultLabel}>Opportunity Score</div>
-            <div style={koiStyles.resultValue}>
-              {koiDisplay.totalScore}
-              {typeof koiEval.totalScore === "number" && koiEval.totalScore > 0 ? (
+            <div
+              style={{
+                ...koiStyles.resultValue,
+                color: scoreTextColor(totalScoreForDisplay, 100),
+              }}
+            >
+              {formatScoreFraction(totalScoreForDisplay, 100)}
+              {isFiniteScore(totalScoreForDisplay) ? (
                 <span style={{ ...koiStyles.subtitle, display: "block", marginTop: "4px" }}>
-                  / 60 max
+                  max 100
                   {koiDisplay.scorePartialHint ? " · partial" : ""}
                 </span>
               ) : null}
@@ -415,64 +495,143 @@ export function OpportunityDecisionEngine({
       </div>
 
       {koiEval.parts ? (
-        <div style={koiStyles.scoreBreakdown}>
-          <div style={koiStyles.breakdownTitle}>Score breakdown</div>
-          <div style={koiStyles.breakdownRow}>
-            <span>Trend</span>
-            <span style={koiStyles.breakdownPts}>
-              {koiEval.parts.trend ?? "—"}
-            </span>
+        <div>
+          <div style={koiStyles.scoreBreakdown}>
+            <div style={koiStyles.breakdownTitle}>Score breakdown</div>
+            <div style={koiStyles.breakdownRow}>
+              <span>Structure score</span>
+              <span
+                style={{
+                  ...koiStyles.breakdownPts,
+                  color: scoreTextColor(structureScoreForDisplay, 50),
+                }}
+              >
+                {formatScoreFraction(structureScoreForDisplay, 50)}
+              </span>
+            </div>
+            <div style={koiStyles.breakdownRow}>
+              <span>Trend</span>
+              <span
+                style={{
+                  ...koiStyles.breakdownPts,
+                  color: scoreTextColor(koiEval.parts.trend, 20),
+                }}
+              >
+                {formatScoreFraction(koiEval.parts.trend, 20)}
+              </span>
+            </div>
+            <div style={koiStyles.breakdownRow}>
+              <span>Location</span>
+              <span
+                style={{
+                  ...koiStyles.breakdownPts,
+                  color: scoreTextColor(koiEval.parts.htfLocation, 10),
+                }}
+              >
+                {formatScoreFraction(koiEval.parts.htfLocation, 10)}
+              </span>
+            </div>
+            <div style={koiStyles.breakdownRow}>
+              <span>Imbalance strength</span>
+              <span
+                style={{
+                  ...koiStyles.breakdownPts,
+                  color: scoreTextColor(koiEval.parts.imbalance, 20),
+                }}
+              >
+                {formatScoreFraction(koiEval.parts.imbalance, 20)}
+              </span>
+            </div>
+            <div style={koiStyles.breakdownRow}>
+              <span>Time at Zone</span>
+              <span
+                style={{
+                  ...koiStyles.breakdownPts,
+                  color: scoreTextColor(koiEval.parts.timeAtZone, 10),
+                }}
+              >
+                {formatScoreFraction(koiEval.parts.timeAtZone, 10)}
+              </span>
+            </div>
+            <div style={koiStyles.breakdownRow}>
+              <span>Freshness</span>
+              <span
+                style={{
+                  ...koiStyles.breakdownPts,
+                  color: scoreTextColor(koiEval.parts.freshness, 20),
+                }}
+              >
+                {formatScoreFraction(koiEval.parts.freshness, 20)}
+              </span>
+            </div>
+            <div style={koiStyles.breakdownRow}>
+              <span>Context score</span>
+              <span
+                style={{
+                  ...koiStyles.breakdownPts,
+                  color: scoreTextColor(contextScoreForDisplay, 50),
+                }}
+              >
+                {formatScoreFraction(contextScoreForDisplay, 50)}
+              </span>
+            </div>
+            <div style={koiStyles.breakdownRow}>
+              <span>R:R (Target 2)</span>
+              <span style={koiStyles.breakdownPts}>
+                {koiEval.parts.rewardRisk === null ||
+                koiEval.parts.rewardRisk === undefined
+                  ? "—"
+                  : `${koiEval.parts.rewardRisk.toFixed(2)}:1`}
+              </span>
+            </div>
+            <div style={koiStyles.breakdownRow}>
+              <span>Profit Margin score (max 20)</span>
+              <span
+                style={{
+                  ...koiStyles.breakdownPts,
+                  color: scoreTextColor(koiEval.rewardRiskPoints, 20),
+                }}
+              >
+                {formatScoreFraction(koiEval.rewardRiskPoints, 20)}
+              </span>
+            </div>
+            <div style={{ ...koiStyles.breakdownRow, ...koiStyles.breakdownRowLast }}>
+              <span>Final opportunity (max 100)</span>
+              <span
+                style={{
+                  ...koiStyles.breakdownPts,
+                  color: scoreTextColor(totalScoreForDisplay, 100),
+                }}
+              >
+                {formatScoreFraction(totalScoreForDisplay, 100)}
+              </span>
+            </div>
           </div>
-          <div style={koiStyles.breakdownRow}>
-            <span>Location</span>
-            <span style={koiStyles.breakdownPts}>
-              {koiEval.parts.htfLocation ?? "—"}
-            </span>
-          </div>
-          <div style={koiStyles.breakdownRow}>
-            <span>Pattern / Stage</span>
-            <span style={koiStyles.breakdownPts}>
-              {koiEval.parts.patternStage ?? "—"}
-            </span>
-          </div>
-          <div style={koiStyles.breakdownRow}>
-            <span>Imbalance strength</span>
-            <span style={koiStyles.breakdownPts}>
-              {koiEval.parts.imbalance ?? "—"}
-            </span>
-          </div>
-          <div style={koiStyles.breakdownRow}>
-            <span>Time at Zone</span>
-            <span style={koiStyles.breakdownPts}>
-              {koiEval.parts.timeAtZone ?? "—"}
-            </span>
-          </div>
-          <div style={koiStyles.breakdownRow}>
-            <span>Setup score (max 50)</span>
-            <span style={koiStyles.breakdownPts}>
-              {koiEval.setupScore ?? "—"}
-            </span>
-          </div>
-          <div style={koiStyles.breakdownRow}>
-            <span>R:R (Target 2)</span>
-            <span style={koiStyles.breakdownPts}>
-              {koiEval.parts.rewardRisk === null ||
-              koiEval.parts.rewardRisk === undefined
-                ? "—"
-                : `${koiEval.parts.rewardRisk.toFixed(2)}:1`}
-            </span>
-          </div>
-          <div style={koiStyles.breakdownRow}>
-            <span>R:R score (max 10)</span>
-            <span style={koiStyles.breakdownPts}>
-              {koiEval.rewardRiskPoints ?? "—"}
-            </span>
-          </div>
-          <div style={{ ...koiStyles.breakdownRow, ...koiStyles.breakdownRowLast }}>
-            <span>Final opportunity (max 60)</span>
-            <span style={koiStyles.breakdownPts}>
-              {koiEval.totalScore ?? "—"}
-            </span>
+
+          <div style={koiStyles.scoreBreakdown}>
+            <div style={koiStyles.breakdownTitle}>Trade Coach</div>
+            <div style={koiStyles.breakdownRow}>
+              <span>Strengths</span>
+              <span style={koiStyles.breakdownPts}>
+                {strengths.length > 0
+                  ? strengths.map((item) => item.label).join(", ")
+                  : "—"}
+              </span>
+            </div>
+            <div style={koiStyles.breakdownRow}>
+              <span>Weaknesses</span>
+              <span style={koiStyles.breakdownPts}>
+                {weaknesses.length > 0
+                  ? weaknesses.map((item) => item.label).join(", ")
+                  : "—"}
+              </span>
+            </div>
+            <div style={{ ...koiStyles.breakdownRow, ...koiStyles.breakdownRowLast }}>
+              <span>Guidance</span>
+              <span style={{ ...koiStyles.breakdownPts, maxWidth: "70%", textAlign: "right" }}>
+                {coachGuidance}
+              </span>
+            </div>
           </div>
         </div>
       ) : null}
