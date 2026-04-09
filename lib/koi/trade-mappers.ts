@@ -1,4 +1,5 @@
 import { ALL_MISTAKES } from "./constants";
+import { partitionMistakesByStage } from "./stage-mistakes";
 import type {
   DatabaseTradeRow,
   Freshness,
@@ -49,6 +50,8 @@ export function mapDatabaseTradeToTrade(
   row: DatabaseTradeRow,
   mistakes: Mistake[]
 ): Trade {
+  const safeMistakes = Array.isArray(mistakes) ? mistakes : [];
+  const { setup, management } = partitionMistakesByStage(safeMistakes);
   const target2 = parseNumNullable(row.target2);
   const t1 = parseNumNullable(row.target1_allocation_pct);
   const t2 = parseNumNullable(row.target2_allocation_pct);
@@ -82,8 +85,16 @@ export function mapDatabaseTradeToTrade(
       : {}),
     ...(totalScore !== null && totalScore !== undefined ? { totalScore } : {}),
     ...(row.final_grade ? { finalGrade: row.final_grade } : {}),
-    mistakes,
-    createdAt: row.created_at,
+    mistakes: safeMistakes,
+    setupMistakes: setup,
+    managementMistakes: management,
+    ...(row.review_completed != null
+      ? { reviewCompleted: Boolean(row.review_completed) }
+      : {}),
+    createdAt:
+      typeof row.created_at === "string" && row.created_at.length > 0
+        ? row.created_at
+        : new Date(0).toISOString(),
     ...(exitPrice !== null && exitPrice !== undefined ? { exitPrice } : {}),
   };
 }
@@ -114,6 +125,7 @@ export function mapTradeToInsertPayload(userId: string, trade: Trade) {
     total_score: trade.totalScore ?? null,
     final_grade: trade.finalGrade ?? null,
     exit_price: trade.exitPrice ?? null,
+    review_completed: trade.reviewCompleted ?? false,
   };
 }
 
@@ -142,6 +154,7 @@ export function mapTradeToUpdatePayload(trade: Trade) {
     total_score: trade.totalScore ?? null,
     final_grade: trade.finalGrade ?? null,
     exit_price: trade.exitPrice ?? null,
+    review_completed: trade.reviewCompleted ?? false,
   };
 }
 

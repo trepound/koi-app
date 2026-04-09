@@ -7,6 +7,14 @@ export function getSetupGrade(score: number) {
   return "D";
 }
 
+/** Setup score on 0–50 scale (pillar-based, setup-mistake-adjusted). */
+export function getSetupGradeScaled50(score: number) {
+  if (score >= 44) return "A";
+  if (score >= 36) return "B";
+  if (score >= 27) return "C";
+  return "D";
+}
+
 export function getTradeGrade(score: number) {
   if (score >= 90) return "A";
   if (score >= 80) return "B";

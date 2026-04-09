@@ -1,6 +1,16 @@
-import { getSetupGrade, getTradeGrade } from "./grading";
-import { calculateExecutionScore, calculateSetupScore } from "./scoring";
+import {
+  getSetupGradeScaled50,
+  getTradeGrade,
+} from "./grading";
+import { calculateExecutionScore } from "./mistake-penalties";
+import { calculateScaledSetupScore } from "./setup-mistake-penalties";
+import { calculateSetupScore } from "./scoring";
 import { calculateRMultiple, calculateWeightedRewardRiskFromPrices } from "./risk";
+import {
+  aggregateMistakesForPersistence,
+  normalizeStageMistakes,
+  partitionMistakesByStage,
+} from "./stage-mistakes";
 import type {
   Freshness,
   HTFAlignment,
@@ -25,6 +35,7 @@ export type BuildNewTradeParams = {
   freshness: Freshness;
   htfAlignment: HTFAlignment;
   locationQuality: LocationQuality;
+  setupMistakes?: Mistake[];
 };
 
 export function buildNewTrade(params: BuildNewTradeParams): Trade {
@@ -36,13 +47,17 @@ export function buildNewTrade(params: BuildNewTradeParams): Trade {
     params.pct1,
     params.pct2
   );
-  const setupScore = calculateSetupScore(
+  const rawPillar = calculateSetupScore(
     params.imbalanceQuality,
     params.freshness,
     params.htfAlignment,
     params.locationQuality
   );
-  const setupGrade = getSetupGrade(setupScore);
+  const setupMistakes = params.setupMistakes ?? [];
+  const setupScore = calculateScaledSetupScore(rawPillar, setupMistakes);
+  const setupGrade = getSetupGradeScaled50(setupScore);
+
+  const mistakes = aggregateMistakesForPersistence(setupMistakes, []);
 
   return {
     id: Date.now(),
@@ -63,9 +78,58 @@ export function buildNewTrade(params: BuildNewTradeParams): Trade {
     setupScore,
     setupGrade,
     rewardRisk,
-    mistakes: [],
+    mistakes,
+    setupMistakes,
+    managementMistakes: [],
     createdAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Single source: pillar setup (minus setup-stage mistakes, scaled 0–50) +
+ * execution from management-stage mistakes only. Total = setup + execution.
+ */
+export function recalculateTradeScores(trade: Trade): Trade {
+  const { setup, management } = normalizeStageMistakes(trade);
+  const rawPillar = calculateSetupScore(
+    trade.imbalanceQuality,
+    trade.freshness,
+    trade.htfAlignment,
+    trade.locationQuality
+  );
+  const setupScore = calculateScaledSetupScore(rawPillar, setup);
+  const setupGrade = getSetupGradeScaled50(setupScore);
+  const executionScore = calculateExecutionScore(management);
+  const totalScore = setupScore + executionScore;
+  const mistakes = aggregateMistakesForPersistence(setup, management);
+
+  return {
+    ...trade,
+    setupMistakes: setup,
+    managementMistakes: management,
+    mistakes,
+    setupScore,
+    setupGrade,
+    executionScore,
+    totalScore,
+    finalGrade: getTradeGrade(totalScore),
+  };
+}
+
+/** Legacy: flat `mistakes` list only — partitions into stages then scores. */
+export function recalculateTradeScoresForMistakes(
+  trade: Trade,
+  mistakes: Mistake[]
+): Trade {
+  const { setup, management } = partitionMistakesByStage(
+    Array.isArray(mistakes) ? mistakes : []
+  );
+  return recalculateTradeScores({
+    ...trade,
+    setupMistakes: setup,
+    managementMistakes: management,
+    mistakes: aggregateMistakesForPersistence(setup, management),
+  });
 }
 
 /** Returns updated trade when closing; caller merges into list. */
@@ -80,31 +144,14 @@ export function finalizeExistingTrade(
     trade.side
   );
 
-  const safeRewardRisk =
-    typeof trade.rewardRisk === "number" ? trade.rewardRisk : 0;
-  const safeSize = typeof trade.size === "number" ? trade.size : 0;
-  const safeMistakes = Array.isArray(trade.mistakes) ? trade.mistakes : [];
-  const safeSetupScore =
-    typeof trade.setupScore === "number" ? trade.setupScore : 0;
-
-  const executionScore = calculateExecutionScore(
-    safeRewardRisk,
-    safeSize,
-    safeMistakes
-  );
-
-  const totalScore = safeSetupScore + executionScore;
-  const finalGrade = getTradeGrade(totalScore);
-
-  return {
+  const closed: Trade = {
     ...trade,
     status: "CLOSED" as TradeStatus,
     exitPrice: exitValue,
     rMultiple,
-    executionScore,
-    totalScore,
-    finalGrade,
   };
+
+  return recalculateTradeScores(closed);
 }
 
 export function updateTradeStatusById(
@@ -120,5 +167,7 @@ export function applyMistakesById(
   id: number,
   mistakes: Mistake[]
 ): Trade[] {
-  return trades.map((t) => (t.id === id ? { ...t, mistakes } : t));
+  return trades.map((t) =>
+    t.id === id ? recalculateTradeScoresForMistakes(t, mistakes) : t
+  );
 }

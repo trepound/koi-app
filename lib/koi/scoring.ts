@@ -1,3 +1,7 @@
+/**
+ * Setup-side scoring helpers (ODE / trade setup dimensions).
+ * Execution score (0–50 from mistake buckets) lives only in `./mistake-penalties`.
+ */
 import type {
   Freshness,
   HTFAlignment,
@@ -7,7 +11,6 @@ import type {
   KoiTimeAtZone,
   KoiTrendRelation,
   LocationQuality,
-  Mistake,
 } from "./types";
 
 export function getImbalancePoints(value: ImbalanceQuality) {
@@ -81,24 +84,3 @@ export function calculateSetupScore(
   );
 }
 
-export function calculateExecutionScore(
-  rewardRisk: number,
-  sizeNum: number,
-  mistakes: Mistake[]
-) {
-  let score = 55;
-
-  if (rewardRisk < 2) score -= 10;
-  if (sizeNum > 1) score -= 5;
-
-  if (mistakes.includes("Emotional")) score -= 10;
-  if (mistakes.includes("Oversized")) score -= 7;
-  if (mistakes.includes("Chased Price")) score -= 5;
-  if (mistakes.includes("Early Entry")) score -= 4;
-  if (mistakes.includes("Ignored Zone")) score -= 6;
-  if (mistakes.includes("Countertrend Force")) score -= 8;
-  if (mistakes.includes("Moved Stop")) score -= 10;
-  if (mistakes.includes("Cut Early")) score -= 6;
-
-  return Math.max(score, 0);
-}

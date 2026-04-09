@@ -4,6 +4,7 @@ export type Mistake =
   | "Early Entry"
   | "Chased Price"
   | "Oversized"
+  | "Undersized Position"
   | "Emotional"
   | "Ignored Zone"
   | "Countertrend Force"
@@ -64,6 +65,8 @@ export type DatabaseTradeRow = {
   total_score: number | string | null;
   final_grade: string | null;
   exit_price: number | string | null;
+  /** Run `supabase/schema.sql` migration if column missing. */
+  review_completed?: boolean | null;
   created_at: string;
   updated_at: string;
 };
@@ -104,7 +107,18 @@ export type Trade = {
   totalScore?: number;
   finalGrade?: string;
 
+  /**
+   * Aggregate mistakes (still what `trade_mistakes` in the DB round-trips today).
+   * When `setupMistakes` / `managementMistakes` are populated, callers may derive
+   * execution scoring from their union until persistence is split.
+   */
   mistakes: Mistake[];
+  /** Setup-phase mistakes (before / at entry). Optional until UI + DB support. */
+  setupMistakes?: Mistake[];
+  /** Management-phase mistakes (while trade is live). Optional until UI + DB support. */
+  managementMistakes?: Mistake[];
+  /** User completed structured trade review (lifecycle “Review” stage). */
+  reviewCompleted?: boolean;
 
   createdAt: string;
   exitPrice?: number;

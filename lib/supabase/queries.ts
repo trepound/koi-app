@@ -8,34 +8,100 @@ import {
   mapTradeToUpdatePayload,
 } from "@/lib/koi/trade-mappers";
 
-type TradeRowWithMistakes = DatabaseTradeRow & {
-  trade_mistakes?: { mistake: string }[] | null;
-};
+function normalizeTradeId(id: unknown): number | null {
+  if (typeof id === "number" && Number.isFinite(id) && Number.isSafeInteger(id)) {
+    return id;
+  }
+  if (typeof id === "string" && id.trim() !== "") {
+    const n = Number(id);
+    if (Number.isFinite(n) && Number.isSafeInteger(n)) return n;
+  }
+  return null;
+}
 
-function mapJoinedRow(row: TradeRowWithMistakes): Trade {
-  const nested = row.trade_mistakes ?? [];
-  const mistakes: Mistake[] = nested
-    .map((m) => m.mistake)
-    .filter(isMistake);
-  const { trade_mistakes, ...rest } = row;
-  void trade_mistakes;
-  return mapDatabaseTradeToTrade(rest, mistakes);
+/**
+ * Load mistakes for many trades in one query (no PostgREST embed — avoids
+ * "could not find relationship" / schema cache issues).
+ */
+async function loadMistakesMapForTrades(
+  supabase: SupabaseClient,
+  tradeIds: unknown[]
+): Promise<Map<number, Mistake[]>> {
+  const ids = tradeIds
+    .map(normalizeTradeId)
+    .filter((id): id is number => id !== null);
+  if (ids.length === 0) return new Map();
+
+  const { data, error } = await supabase
+    .from("trade_mistakes")
+    .select("trade_id, mistake")
+    .in("trade_id", ids);
+
+  if (error) throw error;
+
+  const map = new Map<number, Mistake[]>();
+  for (const raw of data ?? []) {
+    if (!raw || typeof raw !== "object") continue;
+    const rec = raw as { trade_id?: unknown; mistake?: unknown };
+    const tradeId = normalizeTradeId(rec.trade_id);
+    const mistakeStr = rec.mistake;
+    if (tradeId === null || typeof mistakeStr !== "string") continue;
+    if (!isMistake(mistakeStr)) continue;
+    const list = map.get(tradeId) ?? [];
+    list.push(mistakeStr);
+    map.set(tradeId, list);
+  }
+  return map;
+}
+
+function mapTradeDbToUi(
+  row: DatabaseTradeRow,
+  mistakeMap: Map<number, Mistake[]>
+): Trade {
+  const nid = normalizeTradeId(row.id);
+  const mistakes = nid !== null ? mistakeMap.get(nid) ?? [] : [];
+  return mapDatabaseTradeToTrade(row, mistakes);
+}
+
+async function mapSingleTradeRowWithMistakes(
+  supabase: SupabaseClient,
+  row: DatabaseTradeRow
+): Promise<Trade> {
+  const mistakeMap = await loadMistakesMapForTrades(supabase, [row.id]);
+  return mapTradeDbToUi(row, mistakeMap);
 }
 
 export async function fetchTradesForUser(
   supabase: SupabaseClient,
   userId: string
 ): Promise<Trade[]> {
-  const { data, error } = await supabase
+  const { data: trades, error: tradesError } = await supabase
     .from("trades")
-    .select("*, trade_mistakes(mistake)")
+    .select("*")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
-  if (error) throw error;
-  if (!data?.length) return [];
+  if (tradesError) throw tradesError;
+  if (!trades?.length) return [];
 
-  return (data as TradeRowWithMistakes[]).map(mapJoinedRow);
+  const mistakeMap = await loadMistakesMapForTrades(
+    supabase,
+    trades.map((t) => t.id)
+  );
+
+  const out: Trade[] = [];
+  for (const row of trades) {
+    try {
+      out.push(mapTradeDbToUi(row as DatabaseTradeRow, mistakeMap));
+    } catch (rowErr) {
+      console.warn(
+        "[KOI fetchTradesForUser] skipped row (mapping failed):",
+        row?.id,
+        rowErr
+      );
+    }
+  }
+  return out;
 }
 
 export async function createTradeForUser(
@@ -51,7 +117,14 @@ export async function createTradeForUser(
     .single();
 
   if (error) throw error;
-  return mapDatabaseTradeToTrade(data as DatabaseTradeRow, []);
+  const row = data as DatabaseTradeRow;
+  const newId = normalizeTradeId(row.id);
+  if (newId !== null && trade.mistakes.length > 0) {
+    const rows = mapTradeMistakesToInsertPayload(newId, trade.mistakes);
+    const { error: insErr } = await supabase.from("trade_mistakes").insert(rows);
+    if (insErr) throw insErr;
+  }
+  return mapSingleTradeRowWithMistakes(supabase, row);
 }
 
 export async function updateTradeForUser(
@@ -65,11 +138,11 @@ export async function updateTradeForUser(
     .update({ status: updates.status })
     .eq("id", tradeId)
     .eq("user_id", userId)
-    .select("*, trade_mistakes(mistake)")
+    .select("*")
     .single();
 
   if (error) throw error;
-  return mapJoinedRow(data as TradeRowWithMistakes);
+  return mapSingleTradeRowWithMistakes(supabase, data as DatabaseTradeRow);
 }
 
 export async function finalizeTradeForUser(
@@ -84,11 +157,11 @@ export async function finalizeTradeForUser(
     .update(payload)
     .eq("id", tradeId)
     .eq("user_id", userId)
-    .select("*, trade_mistakes(mistake)")
+    .select("*")
     .single();
 
   if (error) throw error;
-  return mapJoinedRow(data as TradeRowWithMistakes);
+  return mapSingleTradeRowWithMistakes(supabase, data as DatabaseTradeRow);
 }
 
 export async function replaceTradeMistakesForTrade(
@@ -112,13 +185,13 @@ export async function replaceTradeMistakesForTrade(
 
   const { data, error } = await supabase
     .from("trades")
-    .select("*, trade_mistakes(mistake)")
+    .select("*")
     .eq("id", tradeId)
     .eq("user_id", userId)
     .single();
 
   if (error) throw error;
-  return mapJoinedRow(data as TradeRowWithMistakes);
+  return mapSingleTradeRowWithMistakes(supabase, data as DatabaseTradeRow);
 }
 
 export async function deleteAllTradesForUser(
@@ -127,4 +200,22 @@ export async function deleteAllTradesForUser(
 ): Promise<void> {
   const { error } = await supabase.from("trades").delete().eq("user_id", userId);
   if (error) throw error;
+}
+
+export async function updateTradeReviewCompleted(
+  supabase: SupabaseClient,
+  userId: string,
+  tradeId: number,
+  reviewCompleted: boolean
+): Promise<Trade> {
+  const { data, error } = await supabase
+    .from("trades")
+    .update({ review_completed: reviewCompleted })
+    .eq("id", tradeId)
+    .eq("user_id", userId)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return mapSingleTradeRowWithMistakes(supabase, data as DatabaseTradeRow);
 }

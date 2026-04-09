@@ -31,6 +31,10 @@ export function TraderScorecard({
   missedCount,
 }: TraderScorecardProps) {
   const card = styles.card as CSSProperties;
+  const disciplinePoints = Math.min(
+    20,
+    Math.max(0, Math.round((disciplineScore / 100) * 20))
+  );
   return (
     <div style={styles.card}>
       <h2 style={styles.sectionTitle}>Trader Scorecard</h2>
@@ -49,11 +53,11 @@ export function TraderScorecard({
         </div>
         <div style={card}>
           <div style={styles.kpiLabel}>Avg Setup Score</div>
-          <div style={styles.kpiValue}>{avgSetupScore.toFixed(0)} / 45</div>
+          <div style={styles.kpiValue}>{avgSetupScore.toFixed(0)} / 50</div>
         </div>
         <div style={card}>
           <div style={styles.kpiLabel}>Avg Execution Score</div>
-          <div style={styles.kpiValue}>{avgExecutionScore.toFixed(0)} / 55</div>
+          <div style={styles.kpiValue}>{avgExecutionScore.toFixed(0)} / 50</div>
         </div>
         <div style={card}>
           <div style={styles.kpiLabel}>Avg Total Score</div>
@@ -61,7 +65,7 @@ export function TraderScorecard({
         </div>
         <div style={card}>
           <div style={styles.kpiLabel}>Discipline Score</div>
-          <div style={styles.kpiValue}>{disciplineScore.toFixed(0)}%</div>
+          <div style={styles.kpiValue}>{disciplinePoints} / 20</div>
         </div>
         <div style={card}>
           <div style={styles.kpiLabel}>Planned / Pending / Active</div>

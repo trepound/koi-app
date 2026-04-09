@@ -5,15 +5,17 @@ import type { Mistake } from "@/lib/koi/types";
 import { dashboardStyles as styles } from "@/lib/koi/dashboard-styles";
 
 export function MistakesSelector({
+  mistakes: mistakeOptions = ALL_MISTAKES,
   selectedMistakes,
   onToggleMistake,
 }: {
+  mistakes?: Mistake[];
   selectedMistakes: Mistake[];
   onToggleMistake: (m: Mistake) => void;
 }) {
   return (
     <div style={styles.mistakesBox}>
-      {ALL_MISTAKES.map((mistake) => (
+      {mistakeOptions.map((mistake) => (
         <label key={mistake} style={styles.mistakeItem}>
           <input
             type="checkbox"

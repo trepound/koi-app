@@ -48,6 +48,8 @@ create table if not exists public.trades (
 
   exit_price numeric null,
 
+  review_completed boolean not null default false,
+
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -197,3 +199,10 @@ create policy "trade_mistakes_delete_own"
         and t.user_id = auth.uid()
     )
   );
+
+-- ---------------------------------------------------------------------------
+-- Existing projects: add review flag if trades table predates this column
+-- (Uncomment and run once in Supabase SQL Editor if insert/update fails.)
+-- ---------------------------------------------------------------------------
+-- alter table public.trades
+--   add column if not exists review_completed boolean not null default false;

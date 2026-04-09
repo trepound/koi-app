@@ -1,6 +1,7 @@
 "use client";
 
 import { dashboardStyles as styles } from "@/lib/koi/dashboard-styles";
+import { SETUP_STAGE_MISTAKES } from "@/lib/koi/stage-mistakes";
 import type { Mistake } from "@/lib/koi/types";
 import { MistakesSelector } from "./MistakesSelector";
 import { TradeBiasDisplay } from "./TradeBiasDisplay";
@@ -39,6 +40,8 @@ export type TradeSetupPanelProps = {
   onClearTrades: () => void;
   selectedMistakes: Mistake[];
   onToggleMistake: (m: Mistake) => void;
+  /** Defaults to setup-stage mistakes only. */
+  mistakeOptions?: Mistake[];
 };
 
 export function TradeSetupPanel({
@@ -71,6 +74,7 @@ export function TradeSetupPanel({
   onClearTrades,
   selectedMistakes,
   onToggleMistake,
+  mistakeOptions = [...SETUP_STAGE_MISTAKES] as Mistake[],
 }: TradeSetupPanelProps) {
   return (
     <div style={styles.card}>
@@ -317,7 +321,9 @@ export function TradeSetupPanel({
         )}
       </div>
 
+      <div style={styles.tradeSetupSubheading}>Setup mistakes (before trade)</div>
       <MistakesSelector
+        mistakes={mistakeOptions}
         selectedMistakes={selectedMistakes}
         onToggleMistake={onToggleMistake}
       />

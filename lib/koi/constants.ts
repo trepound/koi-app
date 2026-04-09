@@ -6,6 +6,7 @@ export const ALL_MISTAKES: Mistake[] = [
   "Early Entry",
   "Chased Price",
   "Oversized",
+  "Undersized Position",
   "Emotional",
   "Ignored Zone",
   "Countertrend Force",

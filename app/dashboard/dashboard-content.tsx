@@ -8,8 +8,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuthUser } from "@/components/auth/AuthGate";
 import { UserMenu } from "@/components/auth/UserMenu";
+import { DevelopmentProgressPanel } from "@/components/dashboard/DevelopmentProgressPanel";
 import { TradeCoachPanel } from "@/components/dashboard/TradeCoachPanel";
-import { TraderScorecard } from "@/components/dashboard/TraderScorecard";
+import { TraderScorecard } from "@/components/TraderScorecard";
 import { OpportunityDecisionEngine } from "@/components/ode/OpportunityDecisionEngine";
 import { SystemChecksPanel } from "@/components/ode/SystemChecksPanel";
 import { TradeLifecycleTable } from "@/components/trade/TradeLifecycleTable";
@@ -22,9 +23,15 @@ import {
 } from "@/lib/koi/risk";
 import { clearTradesStorage } from "@/lib/koi/storage";
 import {
+  aggregateMistakesForPersistence,
+  normalizeStageMistakes,
+} from "@/lib/koi/stage-mistakes";
+import {
   buildNewTrade,
   finalizeExistingTrade,
+  recalculateTradeScores,
 } from "@/lib/koi/trade";
+import { formatSupabaseOrUnknownError } from "@/lib/supabase/error-format";
 import { createClient } from "@/lib/supabase/client";
 import {
   createTradeForUser,
@@ -33,6 +40,7 @@ import {
   finalizeTradeForUser,
   replaceTradeMistakesForTrade,
   updateTradeForUser,
+  updateTradeReviewCompleted,
 } from "@/lib/supabase/queries";
 import type {
   Freshness,
@@ -76,7 +84,9 @@ export function DashboardContent() {
   const [locationQuality, setLocationQuality] =
     useState<LocationQuality>("Excellent");
 
-  const [selectedMistakes, setSelectedMistakes] = useState<Mistake[]>([]);
+  const [selectedSetupMistakes, setSelectedSetupMistakes] = useState<Mistake[]>(
+    []
+  );
   const [trades, setTrades] = useState<Trade[]>([]);
   const [exitInputs, setExitInputs] = useState<Record<number, string>>({});
   const [loadingTrades, setLoadingTrades] = useState(true);
@@ -91,19 +101,63 @@ export function DashboardContent() {
 
   useEffect(() => {
     let cancelled = false;
-    const supabase = createClient();
+    const dbg = (...args: unknown[]) => {
+      if (process.env.NODE_ENV === "development") {
+        console.log("[KOI dashboard load]", ...args);
+      }
+    };
 
     void (async () => {
       setLoadingTrades(true);
+      dbg("user/session resolved, user.id =", user.id);
+      let supabase: ReturnType<typeof createClient>;
       try {
+        supabase = createClient();
+      } catch (bootErr) {
+        console.error("Dashboard load failed:", bootErr);
+        if (bootErr instanceof Error) {
+          console.error("message:", bootErr.message);
+          console.error("stack:", bootErr.stack);
+        }
+        if (!cancelled) {
+          alert(
+            `Could not load trades: ${formatSupabaseOrUnknownError(bootErr)}`
+          );
+          setTrades([]);
+        }
+        if (!cancelled) setLoadingTrades(false);
+        return;
+      }
+
+      try {
+        dbg("fetchTradesForUser called");
         const list = await fetchTradesForUser(supabase, user.id);
+        dbg("fetchTradesForUser returned", list.length, "rows");
+        dbg("mapping completed (inside fetchTradesForUser)");
         if (cancelled) return;
+        dbg("setTrades about to run");
         setTrades(list);
+        dbg("setTrades called");
         // Phase 4: optional one-time localStorage import when list.length === 0
       } catch (e) {
-        console.error(e);
+        console.error("Dashboard load failed:", e);
+        if (e instanceof Error) {
+          console.error("message:", e.message);
+          console.error("stack:", e.stack);
+        }
+        if (e !== null && typeof e === "object") {
+          try {
+            console.error(
+              "serialized:",
+              JSON.stringify(e, Object.getOwnPropertyNames(e as object), 2)
+            );
+          } catch {
+            console.error("could not JSON.stringify error object");
+          }
+        }
+        const detail = formatSupabaseOrUnknownError(e);
         if (!cancelled) {
-          alert("Could not load trades from the server.");
+          alert(`Could not load trades: ${detail}`);
           setTrades([]);
         }
       } finally {
@@ -121,8 +175,8 @@ export function DashboardContent() {
     setSize(calculateAutoPositionSize(accountSize, riskPercent, entry, stop));
   }, [entry, stop, accountSize, riskPercent, positionSizeManual]);
 
-  function handleMistakeToggle(mistake: Mistake) {
-    setSelectedMistakes((prev) =>
+  function handleSetupMistakeToggle(mistake: Mistake) {
+    setSelectedSetupMistakes((prev) =>
       prev.includes(mistake)
         ? prev.filter((m) => m !== mistake)
         : [...prev, mistake]
@@ -337,6 +391,7 @@ export function DashboardContent() {
       freshness,
       htfAlignment,
       locationQuality,
+      setupMistakes: selectedSetupMistakes,
     });
 
     try {
@@ -364,7 +419,7 @@ export function DashboardContent() {
     setFreshness("");
     setHTFAlignment("Fully Aligned");
     setLocationQuality("Excellent");
-    setSelectedMistakes([]);
+    setSelectedSetupMistakes([]);
   }
 
   async function updateTradeStatus(id: number, status: TradeStatus) {
@@ -408,19 +463,52 @@ export function DashboardContent() {
     }
   }
 
-  async function applyMistakesToTrade(id: number) {
+  async function persistStageMistakesForTrade(
+    id: number,
+    partial: { setup?: Mistake[]; management?: Mistake[] }
+  ) {
+    const trade = trades.find((t) => t.id === id);
+    if (!trade) return;
+    const norm = normalizeStageMistakes(trade);
+    const setup = partial.setup ?? norm.setup;
+    const management = partial.management ?? norm.management;
     try {
       const supabase = createClient();
       const saved = await replaceTradeMistakesForTrade(
         supabase,
         user.id,
         id,
-        selectedMistakes
+        aggregateMistakesForPersistence(setup, management)
       );
-      setTrades((prev) => prev.map((t) => (t.id === id ? saved : t)));
+      const rescored = recalculateTradeScores(saved);
+      const persisted = await finalizeTradeForUser(
+        supabase,
+        user.id,
+        id,
+        rescored
+      );
+      setTrades((prev) => prev.map((t) => (t.id === id ? persisted : t)));
     } catch (e) {
       console.error(e);
       alert("Could not save mistakes.");
+      throw e;
+    }
+  }
+
+  async function handleSetReviewCompleted(id: number, completed: boolean) {
+    try {
+      const supabase = createClient();
+      const updated = await updateTradeReviewCompleted(
+        supabase,
+        user.id,
+        id,
+        completed
+      );
+      setTrades((prev) => prev.map((t) => (t.id === id ? updated : t)));
+    } catch (e) {
+      console.error(e);
+      alert("Could not update review status.");
+      throw e;
     }
   }
 
@@ -586,6 +674,8 @@ export function DashboardContent() {
         </div>
       ) : (
         <div style={styles.wrap}>
+          <DevelopmentProgressPanel trades={trades} />
+
           <TraderScorecard
             avgR={avgR}
             avgRewardRisk={avgRewardRisk}
@@ -666,8 +756,8 @@ export function DashboardContent() {
             tradeSetupDerived={tradeSetupDerived}
             onCreateSetup={handleCreateSetup}
             onClearTrades={handleClearTrades}
-            selectedMistakes={selectedMistakes}
-            onToggleMistake={handleMistakeToggle}
+            selectedMistakes={selectedSetupMistakes}
+            onToggleMistake={handleSetupMistakeToggle}
           />
 
           <div style={styles.card}>
@@ -683,7 +773,8 @@ export function DashboardContent() {
               setExitInputs={setExitInputs}
               updateTradeStatus={updateTradeStatus}
               finalizeTrade={finalizeTrade}
-              applyMistakesToTrade={applyMistakesToTrade}
+              persistStageMistakesForTrade={persistStageMistakesForTrade}
+              setReviewCompleted={handleSetReviewCompleted}
             />
           </div>
         </div>
