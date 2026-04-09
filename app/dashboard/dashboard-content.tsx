@@ -8,8 +8,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuthUser } from "@/components/auth/AuthGate";
 import { UserMenu } from "@/components/auth/UserMenu";
+import { AccountContextBar } from "@/components/dashboard/AccountContextBar";
 import { DevelopmentProgressPanel } from "@/components/dashboard/DevelopmentProgressPanel";
-import { TradeCoachPanel } from "@/components/dashboard/TradeCoachPanel";
+import { NinetyTradeReportPanel } from "@/components/dashboard/NinetyTradeReportPanel";
+import { SixtyTradeReportPanel } from "@/components/dashboard/SixtyTradeReportPanel";
+import { ThirtyTradeReportPanel } from "@/components/dashboard/ThirtyTradeReportPanel";
+import { FocusForTodayPanel } from "@/components/dashboard/FocusForTodayPanel";
 import { TraderScorecard } from "@/components/TraderScorecard";
 import { OpportunityDecisionEngine } from "@/components/ode/OpportunityDecisionEngine";
 import { SystemChecksPanel } from "@/components/ode/SystemChecksPanel";
@@ -662,19 +666,28 @@ export function DashboardContent() {
         </div>
       </div>
 
-      {loadingTrades ? (
-        <div
-          style={{
-            padding: 48,
-            textAlign: "center",
-            color: "#94a3b8",
-          }}
-        >
-          <p style={{ margin: 0 }}>Loading trades…</p>
-        </div>
-      ) : (
-        <div style={styles.wrap}>
+      <div style={styles.wrap}>
+        <AccountContextBar trades={trades} />
+
+        {loadingTrades ? (
+          <div
+            style={{
+              padding: 48,
+              textAlign: "center",
+              color: "#94a3b8",
+            }}
+          >
+            <p style={{ margin: 0 }}>Loading trades…</p>
+          </div>
+        ) : (
+          <>
           <DevelopmentProgressPanel trades={trades} />
+
+          <ThirtyTradeReportPanel trades={trades} />
+
+          <SixtyTradeReportPanel trades={trades} />
+
+          <NinetyTradeReportPanel trades={trades} />
 
           <TraderScorecard
             avgR={avgR}
@@ -690,7 +703,7 @@ export function DashboardContent() {
             missedCount={missedTrades.length}
           />
 
-          <TradeCoachPanel />
+          <FocusForTodayPanel trades={trades} />
 
           <OpportunityDecisionEngine
             koiEval={koiEval}
@@ -777,8 +790,9 @@ export function DashboardContent() {
               setReviewCompleted={handleSetReviewCompleted}
             />
           </div>
-        </div>
-      )}
+          </>
+        )}
+      </div>
     </main>
   );
 }

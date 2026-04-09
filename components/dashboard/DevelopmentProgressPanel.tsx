@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { dashboardStyles as styles } from "@/lib/koi/dashboard-styles";
 import {
   getDevelopmentProgress,
@@ -12,6 +12,8 @@ import type { Trade } from "@/lib/koi/types";
 
 export function DevelopmentProgressPanel({ trades }: { trades: Trade[] }) {
   const model = useMemo(() => getDevelopmentProgress(trades), [trades]);
+  /** Collapsed by default — expand manually for breakdown / milestone. */
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const fillWidth = `${model.currentRoundProgressPercent}%`;
 
@@ -53,30 +55,18 @@ export function DevelopmentProgressPanel({ trades }: { trades: Trade[] }) {
 
         <div style={styles.devProgressMetrics}>
           <div
-            title="Average of total score (0–100) across reviewed closed trades that have a score."
+            title="Trader level from average total score (0–100) on reviewed closes that have a score."
             style={{ cursor: "help" }}
           >
-            <div style={styles.devProgressMetricLabel}>
-              Professional Readiness
-            </div>
+            <div style={styles.devProgressMetricLabel}>Trader level</div>
             <div style={styles.devProgressMetricValue}>
-              {model.professionalReadinessScore !== null
-                ? `${model.professionalReadinessScore.toFixed(0)}`
-                : "—"}
-              {model.professionalReadinessScore !== null ? (
-                <span
-                  style={{
-                    fontSize: "14px",
-                    fontWeight: 700,
-                    color: "#667085",
-                  }}
-                >
-                  {" "}
-                  / 100
-                </span>
-              ) : null}
+              {model.traderLevelLabel}
             </div>
-            <div style={styles.devProgressMetricHint}>{model.readinessLabel}</div>
+            <div style={styles.devProgressMetricHint}>
+              {model.professionalReadinessScore !== null
+                ? `Level score ${model.professionalReadinessScore.toFixed(0)} / 100`
+                : "Level score —"}
+            </div>
           </div>
 
           <div title={model.maxAllowedRiskDetail}>
@@ -94,12 +84,16 @@ export function DevelopmentProgressPanel({ trades }: { trades: Trade[] }) {
         </div>
       </div>
 
-      <details style={styles.devProgressDetails}>
+      <details
+        style={styles.devProgressDetails}
+        open={detailsOpen}
+        onToggle={(e) => setDetailsOpen(e.currentTarget.open)}
+      >
         <summary
           style={styles.devProgressSummary}
-          title="Click to show Round breakdown, readiness detail, and the next milestone. Hover stat labels for quick hints."
+          title="Round breakdown, level detail, next milestone."
         >
-          Details: Round breakdown, readiness, next milestone
+          Details: rounds, level, milestone
         </summary>
 
         <div style={styles.devProgressDetailBlock}>
@@ -110,7 +104,7 @@ export function DevelopmentProgressPanel({ trades }: { trades: Trade[] }) {
                 <strong>
                   Round {row.roundNumber}: {row.theme}
                 </strong>{" "}
-                ({row.rangeLabel}) —                 {row.reviewedInRound} / {TRADES_PER_ROUND}{" "}
+                ({row.rangeLabel}) — {row.reviewedInRound} / {TRADES_PER_ROUND}{" "}
                 reviewed
                 {row.reviewedInRound >= TRADES_PER_ROUND ? (
                   <span style={{ color: "#067647" }}> · Round complete</span>
@@ -126,7 +120,7 @@ export function DevelopmentProgressPanel({ trades }: { trades: Trade[] }) {
         </div>
 
         <div style={{ ...styles.devProgressDetailBlock, marginTop: "10px" }}>
-          <div style={styles.devProgressDetailHeading}>Readiness breakdown</div>
+          <div style={styles.devProgressDetailHeading}>Trader level detail</div>
           <p style={{ margin: 0 }}>
             Reviewed closed trades (counted for Rounds):{" "}
             <strong>{model.readiness.totalReviewedClosed}</strong>
@@ -137,12 +131,12 @@ export function DevelopmentProgressPanel({ trades }: { trades: Trade[] }) {
             {model.readiness.tradeCountWithScore === 0 ? (
               <span style={{ color: "#667085" }}>
                 {" "}
-                — close trades and save scores to measure readiness.
+                — close trades and save scores to set level.
               </span>
             ) : (
               <>
                 {" "}
-                · Average total score:{" "}
+                · Average level score:{" "}
                 <strong>
                   {model.readiness.averageTotalScore !== null
                     ? model.readiness.averageTotalScore.toFixed(1)
@@ -152,8 +146,8 @@ export function DevelopmentProgressPanel({ trades }: { trades: Trade[] }) {
             )}
           </p>
           <p style={{ margin: "8px 0 0" }}>
-            Labels: 90+ Trading Like a Pro · 80–89 Almost There · 70–79
-            Developing Consistency · below 70 Needs Work.
+            Levels: 90+ Pro Level · 80–89 Consistent · 70–79 Developing · below
+            70 Foundation.
           </p>
         </div>
 

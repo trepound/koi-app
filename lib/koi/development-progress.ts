@@ -49,40 +49,43 @@ export type DevelopmentProgressModel = {
   isProgramComplete: boolean;
   roundBreakdown: RoundBreakdownRow[];
   readiness: ReadinessBreakdown;
+  /** Average total score (0–100) on reviewed closes with scores — drives trader level. */
   professionalReadinessScore: number | null;
-  readinessLabel: string;
+  /** Foundation | Developing | Consistent | Pro Level */
+  traderLevelLabel: string;
   maxAllowedRiskHeadline: string;
   maxAllowedRiskDetail: string;
   nextMilestoneMessage: string;
 };
 
-export function getReadinessLabel(score: number | null): string {
-  if (score === null || !Number.isFinite(score)) return "Needs Work";
-  if (score >= 90) return "Trading Like a Pro";
-  if (score >= 80) return "Almost There";
-  if (score >= 70) return "Developing Consistency";
-  return "Needs Work";
+/** Maps level score (avg total 0–100) to unified KOI trader level labels. */
+export function getTraderLevelLabel(score: number | null): string {
+  if (score === null || !Number.isFinite(score)) return "Foundation";
+  if (score >= 90) return "Pro Level";
+  if (score >= 80) return "Consistent";
+  if (score >= 70) return "Developing";
+  return "Foundation";
 }
 
 /**
- * Max risk guidance from Professional Readiness (average total score on reviewed closes).
- * Below 90 → cap guidance at 1%. At 90+ → optional increase only with explicit rules.
+ * Max risk from level score (avg total on reviewed closes).
+ * Below Pro Level (90+) → 1% cap guidance.
  */
-export function getMaxAllowedRiskGuidance(readiness: number | null): {
+export function getMaxAllowedRiskGuidance(levelScore: number | null): {
   headline: string;
   detail: string;
 } {
-  if (readiness === null || !Number.isFinite(readiness) || readiness < 90) {
+  if (levelScore === null || !Number.isFinite(levelScore) || levelScore < 90) {
     return {
       headline: "Max allowed risk: 1%",
       detail:
-        "Until Professional Readiness reaches 90+, keep risk at 1% of account per trade or less.",
+        "Until you reach Pro Level (90+ score), keep risk at 1% of account per trade or less.",
     };
   }
   return {
     headline: "Max allowed risk: 1% baseline",
     detail:
-      "Readiness 90+: you may plan a higher size only when your written rules allow it — default discipline stays 1% unless you consciously choose otherwise.",
+      "At Pro Level you may size up only when your written rules allow — default stays 1% unless you choose otherwise.",
   };
 }
 
@@ -112,16 +115,16 @@ function buildNextMilestoneMessage(
     return `Round ${currentRound} complete. Next: Round ${nextRound} (${ROUND_THEMES[nextRound]}) — your next reviewed trade opens it.`;
   }
   if (readiness !== null && readiness < 90) {
-    return "All three Rounds are complete. Next milestone: lift Professional Readiness to 90+ while keeping risk discipline.";
+    return "All three Rounds are complete. Next: push level score to 90+ for Pro Level while keeping risk tight.";
   }
   if (readiness !== null && readiness >= 90) {
-    return "Program Rounds and readiness targets met — maintain process and only scale risk when your rules say so.";
+    return "All Rounds complete — you’re at Pro Level. Keep the process; size up only when your rules say so.";
   }
-  return "All three Rounds are complete. Add scored reviewed trades to measure Professional Readiness.";
+  return "All three Rounds are complete. Add reviewed trades with scores to set trader level.";
 }
 
 /**
- * Derives round position, readiness, risk copy, and milestone copy from live trades.
+ * Derives round position, trader level, risk copy, and milestone copy from live trades.
  */
 export function getDevelopmentProgress(trades: Trade[]): DevelopmentProgressModel {
   const reviewed = getReviewedClosedTrades(trades);
@@ -136,7 +139,7 @@ export function getDevelopmentProgress(trades: Trade[]): DevelopmentProgressMode
         withTotal.length
       : null;
 
-  const readinessLabel = getReadinessLabel(professionalReadinessScore);
+  const traderLevelLabel = getTraderLevelLabel(professionalReadinessScore);
   const { headline: maxAllowedRiskHeadline, detail: maxAllowedRiskDetail } =
     getMaxAllowedRiskGuidance(professionalReadinessScore);
 
@@ -197,7 +200,7 @@ export function getDevelopmentProgress(trades: Trade[]): DevelopmentProgressMode
       totalReviewedClosed: totalReviewed,
     },
     professionalReadinessScore,
-    readinessLabel,
+    traderLevelLabel,
     maxAllowedRiskHeadline,
     maxAllowedRiskDetail,
     nextMilestoneMessage,
